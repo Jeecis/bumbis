@@ -75,6 +75,22 @@
             </div>
           </div>
 
+          <div class="space-y-4 px-2">
+            <h2
+              class="text-on-surface-variant uppercase font-black tracking-widest text-sm px-4"
+              style="font-family: 'Plus Jakarta Sans', sans-serif"
+            >
+              Fallen soldiers 🖐️ 😔
+            </h2>
+            <div class="flex flex-wrap gap-3 px-2">
+              <div
+                class="bg-surface-container-low px-6 py-3 rounded-full text-xl font-extrabold tracking-tight opacity-80"
+              >
+                Dmitrijs Popovs
+              </div>
+            </div>
+          </div>
+
           <div class="space-y-4">
             <h2
               :class="[
@@ -227,7 +243,7 @@ import { defineComponent, ref, computed } from 'vue'
 export default defineComponent({
   name: 'HomePage',
   setup() {
-    const defaultBallers = ['Mārcis', 'Linda', 'Emīls', 'Dmitrijs', 'Jēkabs', 'Alberts', 'Eduards']
+    const defaultBallers = ['Mārcis', 'Linda', 'Emīls', 'Robis', 'Jēkabs', 'Alberts', 'Eduards']
     const roster = ref<string[]>([])
     const newName = ref('')
     const pairs = ref<[string, string][]>([])
