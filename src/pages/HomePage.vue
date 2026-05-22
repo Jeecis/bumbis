@@ -56,12 +56,22 @@
           </form>
 
           <div class="space-y-4 px-2">
-            <h2
-              class="text-on-surface-variant uppercase font-black tracking-widest text-sm px-4"
-              style="font-family: 'Plus Jakarta Sans', sans-serif"
-            >
-              Default Ballers
-            </h2>
+            <div class="flex items-center justify-between gap-4 px-4">
+              <h2
+                class="text-on-surface-variant uppercase font-black tracking-widest text-sm"
+                style="font-family: 'Plus Jakarta Sans', sans-serif"
+              >
+                Default Ballers
+              </h2>
+              <button
+                v-if="availableDefaultBallers.length > 0"
+                type="button"
+                class="bg-primary/15 px-4 py-2 rounded-full text-sm font-extrabold uppercase tracking-wide text-primary hover:bg-primary/25 transition-colors"
+                @click="addAllDefaultPeople"
+              >
+                Select all
+              </button>
+            </div>
             <div class="flex flex-wrap gap-3 px-2">
               <button
                 v-for="name in availableDefaultBallers"
@@ -257,6 +267,10 @@ export default defineComponent({
       roster.value.push(name)
     }
 
+    function addAllDefaultPeople() {
+      roster.value.push(...availableDefaultBallers.value)
+    }
+
     function removePerson(name: string) {
       roster.value = roster.value.filter((n) => n !== name)
     }
@@ -301,6 +315,7 @@ export default defineComponent({
       groupCountLabel,
       addPerson,
       addDefaultPerson,
+      addAllDefaultPeople,
       removePerson,
       generatePairs,
     }
