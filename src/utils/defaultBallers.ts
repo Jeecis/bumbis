@@ -2,7 +2,7 @@ export const pairDefaultBallers = [
   'Mārcis',
   'Linda',
   'Emīls',
-  'Dmitrijs',
+  'Robis',
   'Jēkabs',
   'Alberts',
   'Eduards',
