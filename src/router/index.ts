@@ -8,6 +8,12 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS' },
   },
   {
+    path: '/wheel',
+    name: 'Wheel',
+    component: () => import('@/pages/WheelPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Wheel' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },
