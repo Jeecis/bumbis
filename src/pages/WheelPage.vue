@@ -76,7 +76,7 @@
                       :transform="`rotate(${label.rotation} ${label.x} ${label.y})`"
                       class="fill-white select-none"
                       dominant-baseline="middle"
-                      text-anchor="middle"
+                      text-anchor="start"
                     >
                       {{ label.name }}
                     </text>
@@ -394,7 +394,9 @@ function segmentStyle(index: number) {
 
 const wheelLabels = computed(() => {
   const center = 176
-  const radius = 126
+  // Anchor names just outside the centre hub so each one starts from the inside
+  // of the spinner and grows outwards towards the rim.
+  const innerRadius = 80
 
   return wheelSegments.value.map((segment, index) => {
     const centerAngle = segmentAngle.value * index + segmentAngle.value / 2
@@ -403,11 +405,10 @@ const wheelLabels = computed(() => {
     return {
       index,
       name: segment.name,
-      // Orient labels radially (along each spoke) so they read vertically near
-      // the top/bottom and stay upright on the left half of the wheel.
-      rotation: centerAngle <= 180 ? centerAngle - 90 : centerAngle + 90,
-      x: center + Math.sin(radians) * radius,
-      y: center - Math.cos(radians) * radius,
+      // Read radially outwards along each spoke (paired with text-anchor="start").
+      rotation: centerAngle - 90,
+      x: center + Math.sin(radians) * innerRadius,
+      y: center - Math.cos(radians) * innerRadius,
     }
   })
 })
