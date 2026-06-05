@@ -8,7 +8,7 @@ export const pairDefaultBallers = [
   'Eduards',
 ] as const
 
-export const wheelDefaultBallers = [
+export const wheelSpinners = [
   'Zane',
   'Mārcis',
   'Eduards',
