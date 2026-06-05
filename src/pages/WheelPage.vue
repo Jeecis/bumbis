@@ -61,14 +61,25 @@
                   :key="`${segment.name}-${index}`"
                   class="absolute inset-0"
                   :style="segmentStyle(index)"
+                />
+
+                <svg
+                  class="absolute inset-0 h-full w-full pointer-events-none"
+                  viewBox="0 0 352 352"
                 >
-                  <div
-                    class="absolute left-1/2 top-1/2 origin-bottom text-sm font-black uppercase tracking-wide text-white text-center select-none"
-                    :style="segmentLabelStyle(index)"
+                  <text
+                    v-for="label in wheelLabels"
+                    :key="`${label.name}-${label.index}`"
+                    :x="label.x"
+                    :y="label.y"
+                    :transform="`rotate(${label.rotation} ${label.x} ${label.y})`"
+                    class="fill-white select-none"
+                    dominant-baseline="middle"
+                    text-anchor="middle"
                   >
-                    {{ segment.name }}
-                  </div>
-                </div>
+                    {{ label.name }}
+                  </text>
+                </svg>
               </div>
 
               <div
@@ -243,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { defaultBallers } from '@/utils/defaultBallers'
+import { wheelDefaultBallers } from '@/utils/defaultBallers'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -267,7 +278,7 @@ const segmentPalette = [
 ]
 
 const availableDefaultBallers = computed(() =>
-  defaultBallers.filter((name) => !wheelNames.value.includes(name)),
+  wheelDefaultBallers.filter((name) => !wheelNames.value.includes(name)),
 )
 
 const wheelSegments = computed(() => {
@@ -335,16 +346,23 @@ function segmentStyle(index: number) {
   }
 }
 
-function segmentLabelStyle(index: number) {
-  const angle = segmentAngle.value
-  const centerAngle = angle * index + angle / 2
+const wheelLabels = computed(() => {
+  const center = 176
+  const radius = 126
 
-  return {
-    width: '7rem',
-    transform: `translate(-50%, -100%) rotate(${centerAngle}deg) translateY(-7.7rem) rotate(${90}deg)`,
-    textShadow: '0 2px 6px rgba(0,0,0,0.45)',
-  }
-}
+  return wheelSegments.value.map((segment, index) => {
+    const centerAngle = segmentAngle.value * index + segmentAngle.value / 2
+    const radians = (centerAngle * Math.PI) / 180
+
+    return {
+      index,
+      name: segment.name,
+      rotation: centerAngle > 90 && centerAngle < 270 ? centerAngle + 180 : centerAngle,
+      x: center + Math.sin(radians) * radius,
+      y: center - Math.cos(radians) * radius,
+    }
+  })
+})
 
 function spinWheel() {
   if (isSpinning.value || wheelNames.value.length === 0) return
@@ -371,6 +389,16 @@ function spinWheel() {
 </script>
 
 <style scoped>
+svg text {
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  paint-order: stroke;
+  stroke: rgb(0 0 0 / 45%);
+  stroke-linejoin: round;
+  stroke-width: 3px;
+}
+
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.25s ease;
