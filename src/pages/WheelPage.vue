@@ -208,11 +208,17 @@
         >
           <div
             class="w-full max-w-md rounded-[2rem] bg-surface-container p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] border border-white/10"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wheel-winner-title"
           >
             <p class="text-on-surface-variant uppercase font-black tracking-[0.3em] text-xs mb-3">
               Chosen user
             </p>
-            <h3 class="text-4xl font-black tracking-tight text-primary mb-6 break-words">
+            <h3
+              id="wheel-winner-title"
+              class="text-4xl font-black tracking-tight text-primary mb-6 break-words"
+            >
               {{ selectedName }}
             </h3>
             <button
@@ -237,24 +243,9 @@
 </template>
 
 <script setup lang="ts">
+import { defaultBallers } from '@/utils/defaultBallers'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-
-const defaultBallers = [
-  'Zane',
-  'Mārcis',
-  'Eduards',
-  'Jēkabs',
-  'Emīls',
-  'Matīss',
-  'Alberts',
-  'Edgars',
-  'Anitra',
-  'Oskars',
-  'Ēriks',
-  'Valerija',
-  'Linda',
-]
 
 const wheelNames = ref<string[]>([])
 const newName = ref('')
@@ -262,6 +253,7 @@ const selectedName = ref('')
 const showWinnerModal = ref(false)
 const isSpinning = ref(false)
 const rotation = ref(0)
+let spinTimeoutId: number | null = null
 
 const segmentPalette = [
   '#3e65ff',
@@ -317,10 +309,19 @@ function removePerson(name: string) {
   wheelNames.value = wheelNames.value.filter((entry) => entry !== name)
 }
 
+function cancelPendingSpin() {
+  if (spinTimeoutId !== null) {
+    window.clearTimeout(spinTimeoutId)
+    spinTimeoutId = null
+  }
+}
+
 function clearAll() {
+  cancelPendingSpin()
   wheelNames.value = []
   selectedName.value = ''
   showWinnerModal.value = false
+  isSpinning.value = false
 }
 
 function segmentStyle(index: number) {
@@ -348,7 +349,9 @@ function segmentLabelStyle(index: number) {
 function spinWheel() {
   if (isSpinning.value || wheelNames.value.length === 0) return
 
+  cancelPendingSpin()
   const winnerIndex = Math.floor(Math.random() * wheelNames.value.length)
+  const winnerName = wheelNames.value[winnerIndex]
   const centerAngle = segmentAngle.value * winnerIndex + segmentAngle.value / 2
   const extraTurns = 360 * 6
   const targetRotation = extraTurns + (360 - centerAngle)
@@ -358,10 +361,11 @@ function spinWheel() {
   selectedName.value = ''
   rotation.value += targetRotation
 
-  window.setTimeout(() => {
-    selectedName.value = wheelNames.value[winnerIndex]
+  spinTimeoutId = window.setTimeout(() => {
+    selectedName.value = winnerName
     isSpinning.value = false
     showWinnerModal.value = true
+    spinTimeoutId = null
   }, 3000)
 }
 </script>

@@ -1,0 +1,15 @@
+export const defaultBallers = [
+  'Zane',
+  'Mārcis',
+  'Eduards',
+  'Jēkabs',
+  'Emīls',
+  'Matīss',
+  'Alberts',
+  'Edgars',
+  'Anitra',
+  'Oskars',
+  'Ēriks',
+  'Valerija',
+  'Linda',
+] as const
