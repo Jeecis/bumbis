@@ -312,9 +312,26 @@ const availableSpinners = computed(() =>
 const wheelSegments = computed(() => {
   const names = wheelNames.value.length > 0 ? wheelNames.value : ['Add users']
   const palette = segmentPalette.value
+  const colors: string[] = []
+
+  names.forEach((_, index) => {
+    const prev = colors[index - 1]
+    const isLast = index === names.length - 1
+    let color = palette[index % palette.length]
+    // The wheel is circular, so the last segment also neighbours the first one.
+    // If a colour would repeat next to itself, pick the next free colour so two
+    // adjacent spinners never share the same colour.
+    if (color === prev || (isLast && color === colors[0])) {
+      color =
+        palette.find((candidate) => candidate !== prev && (!isLast || candidate !== colors[0])) ??
+        color
+    }
+    colors.push(color)
+  })
+
   return names.map((name, index) => ({
     name,
-    color: palette[index % palette.length],
+    color: colors[index],
   }))
 })
 
