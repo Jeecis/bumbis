@@ -256,7 +256,7 @@
 </template>
 
 <script lang="ts">
-import { defaultBallers } from '@/utils/defaultBallers'
+import { pairDefaultBallers } from '@/utils/defaultBallers'
 import { computed, defineComponent, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -274,7 +274,7 @@ export default defineComponent({
     const showError = ref(false)
 
     const availableDefaultBallers = computed(() =>
-      defaultBallers.filter((name) => !roster.value.includes(name)),
+      pairDefaultBallers.filter((name) => !roster.value.includes(name)),
     )
 
     const groupCountLabel = computed(() => {
