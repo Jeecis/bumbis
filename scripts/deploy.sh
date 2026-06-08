@@ -63,6 +63,17 @@ yarn install --frozen-lockfile
 log "build"
 yarn build-only
 
+log "matchmaking api"
+if [ -f "$REPO_DIR/server/package.json" ]; then
+  ( cd "$REPO_DIR/server" && yarn install --frozen-lockfile )
+  if systemctl list-unit-files | grep -q '^bumbis-api\.service'; then
+    systemctl restart bumbis-api
+    echo "Restarted bumbis-api"
+  else
+    echo "bumbis-api.service not installed yet — see server/README.md for first-time setup"
+  fi
+fi
+
 log "nginx verify"
 nginx -t
 

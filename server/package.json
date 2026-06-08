@@ -1,0 +1,16 @@
+{
+  "name": "bumbis-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Matchmaking lobby API (Express + SQLite) for Bumbis.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "express": "^4.21.2"
+  }
+}

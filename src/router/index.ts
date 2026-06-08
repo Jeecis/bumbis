@@ -14,6 +14,12 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS | Wheel' },
   },
   {
+    path: '/match/:roomId',
+    name: 'Matchmaking',
+    component: () => import('@/pages/MatchmakingPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Matchmaking' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },
