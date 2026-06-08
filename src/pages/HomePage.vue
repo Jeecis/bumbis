@@ -19,6 +19,32 @@
           Spin the wheel
         </RouterLink>
       </div>
+
+      <!-- Live matchmaking entry point -->
+      <button
+        type="button"
+        class="w-full mb-12 flex items-center justify-center pressurized-gradient-primary rounded-[2rem] py-8 px-8 shadow-[0_20px_40px_rgba(0,0,0,0.4)] hover:brightness-110 hover:scale-[1.01] transition-all active:scale-[0.99] duration-150 disabled:opacity-60 disabled:hover:scale-100"
+        :disabled="creatingRoom"
+        @click="startMatchmaking"
+      >
+        <span
+          class="material-symbols-outlined mr-4 text-4xl text-white"
+          style="font-variation-settings: 'FILL' 1"
+          >rocket_launch</span
+        >
+        <span
+          class="font-black text-2xl tracking-tight uppercase text-white"
+          style="font-family: 'Plus Jakarta Sans', sans-serif"
+        >
+          {{ creatingRoom ? 'Creating lobby…' : 'Start matchmaking' }}
+        </span>
+      </button>
+      <p
+        v-if="matchmakingError"
+        class="text-secondary text-sm font-bold -mt-8 mb-10 px-2 text-center"
+      >
+        {{ matchmakingError }}
+      </p>
       <!-- Error Banner -->
       <transition name="fade">
         <div
@@ -257,8 +283,9 @@
 
 <script lang="ts">
 import { pairDefaultBallers } from '@/utils/defaultBallers'
+import { createRoom } from '@/utils/matchmaking'
 import { computed, defineComponent, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 export default defineComponent({
   name: 'HomePage',
@@ -266,6 +293,9 @@ export default defineComponent({
     RouterLink,
   },
   setup() {
+    const router = useRouter()
+    const creatingRoom = ref(false)
+    const matchmakingError = ref('')
     const roster = ref<string[]>([])
     const newName = ref('')
     const pairs = ref<[string, string][]>([])
@@ -303,6 +333,19 @@ export default defineComponent({
       roster.value = roster.value.filter((n) => n !== name)
     }
 
+    async function startMatchmaking() {
+      if (creatingRoom.value) return
+      creatingRoom.value = true
+      matchmakingError.value = ''
+      try {
+        const { id } = await createRoom()
+        router.push(`/match/${id}`)
+      } catch {
+        matchmakingError.value = 'Could not start a lobby. Is the matchmaking service running?'
+        creatingRoom.value = false
+      }
+    }
+
     function shuffle<T>(arr: T[]): T[] {
       const copy = [...arr]
       for (let i = copy.length - 1; i > 0; i--) {
@@ -333,6 +376,9 @@ export default defineComponent({
     }
 
     return {
+      creatingRoom,
+      matchmakingError,
+      startMatchmaking,
       roster,
       newName,
       pairs,

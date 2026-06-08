@@ -1,0 +1,26 @@
+# Bumbis matchmaking API — systemd unit.
+# Install once on the VPS:
+#   sudo cp /var/www/bumbis/server/bumbis-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bumbis-api
+#
+# NOTE: set ExecStart to the absolute path of your node binary.
+#   Find it with:  command -v node   (or, under nvm, e.g.
+#   /root/.nvm/versions/node/vXX.Y.Z/bin/node). systemd has a minimal PATH,
+#   so `node` alone will not resolve.
+
+[Unit]
+Description=Bumbis matchmaking API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/bumbis/server
+ExecStart=/usr/bin/node src/index.js
+Environment=PORT=8787
+Environment=BUMBIS_DB=/var/www/bumbis/server/data/bumbis.db
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
