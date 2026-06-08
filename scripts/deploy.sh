@@ -66,11 +66,43 @@ yarn build-only
 log "matchmaking api"
 if [ -f "$REPO_DIR/server/package.json" ]; then
   ( cd "$REPO_DIR/server" && yarn install --frozen-lockfile )
-  if systemctl list-unit-files | grep -q '^bumbis-api\.service'; then
-    systemctl restart bumbis-api
-    echo "Restarted bumbis-api"
-  else
-    echo "bumbis-api.service not installed yet — see server/README.md for first-time setup"
+
+  # Generate + (re)install the systemd unit every deploy. Regenerating keeps
+  # ExecStart pointed at the node binary this script actually resolved, so the
+  # service survives nvm/node upgrades that move the path. To customise env
+  # (PORT, etc.) without it being clobbered, use a drop-in:
+  #   /etc/systemd/system/bumbis-api.service.d/override.conf
+  NODE_BIN="$(command -v node)"
+  cat > /etc/systemd/system/bumbis-api.service <<EOF
+[Unit]
+Description=Bumbis matchmaking API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$REPO_DIR/server
+ExecStart=$NODE_BIN src/index.js
+Environment=PORT=8787
+Environment=BUMBIS_DB=$REPO_DIR/server/data/bumbis.db
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable bumbis-api >/dev/null 2>&1 || true
+  systemctl restart bumbis-api
+  echo "bumbis-api running ($NODE_BIN)"
+
+  # The nginx /api -> :8787 reverse proxy is NOT auto-edited: the live config
+  # lives outside this repo and a bad rewrite could take the whole site down.
+  # It is a one-time manual step; warn loudly until it is in place.
+  if ! nginx -T 2>/dev/null | grep -q ':8787'; then
+    echo "!! nginx is not proxying /api -> 127.0.0.1:8787 yet."
+    echo "!! Matchmaking will NOT work until you add the block from"
+    echo "!!   server/nginx-api.conf.example  into your live server { } block,"
+    echo "!!   then: nginx -t && systemctl reload nginx"
   fi
 fi
 
