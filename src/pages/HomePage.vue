@@ -11,7 +11,19 @@
     </header>
 
     <main class="flex-grow container mx-auto px-6 py-12 max-w-4xl pb-40">
-      <div class="flex justify-end mb-8">
+      <div class="flex justify-end gap-3 mb-8">
+        <RouterLink
+          to="/results?tab=rankings"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          Rankings
+        </RouterLink>
+        <RouterLink
+          to="/results"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          Results
+        </RouterLink>
         <RouterLink
           to="/wheel"
           class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
@@ -252,7 +264,23 @@
 
     <!-- Bottom Action Button -->
     <div class="fixed bottom-0 left-0 w-full z-50 flex justify-center pb-10 px-6">
-      <div class="fixed bottom-8 px-6 w-full max-w-md">
+      <div class="fixed bottom-8 px-6 w-full max-w-md flex flex-col gap-3">
+        <button
+          v-if="pairs.length > 0"
+          class="flex items-center justify-center bg-surface-container-high rounded-full py-4 w-full shadow-[0_10px_30px_rgba(0,0,0,0.3)] hover:bg-surface-container-highest hover:scale-[1.02] transition-all active:scale-95 duration-150"
+          @click="logPairResults"
+        >
+          <span
+            class="material-symbols-outlined mr-3 text-2xl text-on-surface"
+            style="font-variation-settings: 'FILL' 1"
+            >sports_score</span
+          >
+          <span
+            class="font-extrabold text-base tracking-tight uppercase text-on-surface"
+            style="font-family: 'Plus Jakarta Sans', sans-serif"
+            >Log Results</span
+          >
+        </button>
         <button
           class="flex items-center justify-center pressurized-gradient-primary rounded-full py-5 w-full shadow-[0_20px_40px_rgba(0,0,0,0.4)] hover:brightness-110 hover:scale-[1.02] transition-all active:scale-95 duration-150"
           @click="generatePairs"
@@ -355,6 +383,14 @@ export default defineComponent({
       return copy
     }
 
+    function logPairResults() {
+      const teams = pairs.value.map((pair) => pair as string[])
+      if (soloPerson.value) teams.push([soloPerson.value])
+      sessionStorage.setItem('bumbis:log-teams', JSON.stringify(teams))
+      sessionStorage.setItem('bumbis:log-teams:source', 'custom')
+      router.push('/results')
+    }
+
     function generatePairs() {
       if (roster.value.length === 0) return
       const shuffled = shuffle(roster.value)
@@ -392,6 +428,7 @@ export default defineComponent({
       addAllDefaultPeople,
       removePerson,
       generatePairs,
+      logPairResults,
     }
   },
 })

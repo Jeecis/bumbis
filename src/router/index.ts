@@ -20,6 +20,12 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS | Matchmaking' },
   },
   {
+    path: '/results',
+    name: 'Results',
+    component: () => import('@/pages/ResultsPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Results' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },

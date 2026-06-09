@@ -32,6 +32,23 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_players_room ON players(room_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS game_results (
+    id         TEXT PRIMARY KEY,
+    date       TEXT NOT NULL,
+    teams_json TEXT NOT NULL,
+    winner     TEXT NOT NULL,
+    source     TEXT NOT NULL DEFAULT 'custom',
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS player_elo (
+    name         TEXT PRIMARY KEY,
+    rating       REAL NOT NULL DEFAULT 1200,
+    games_played INTEGER NOT NULL DEFAULT 0,
+    wins         INTEGER NOT NULL DEFAULT 0,
+    updated_at   INTEGER NOT NULL
+  );
 `)
 
 // URL-safe id from a restricted alphabet (no ambiguous chars like 0/O/1/l/I).
@@ -69,6 +86,29 @@ const resetRoomStmt = db.prepare(
   `UPDATE rooms SET status = 'open', teams_json = NULL, updated_at = ? WHERE id = ?`,
 )
 const pruneStmt = db.prepare(`DELETE FROM rooms WHERE updated_at < ?`)
+
+const getPlayerEloStmt = db.prepare(`SELECT name, rating, games_played FROM player_elo WHERE name = ?`)
+const getAllPlayerEloStmt = db.prepare(
+  `SELECT name, rating, games_played, wins FROM player_elo ORDER BY rating DESC`,
+)
+const upsertPlayerEloStmt = db.prepare(`
+  INSERT INTO player_elo (name, rating, games_played, wins, updated_at)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(name) DO UPDATE SET
+    rating       = excluded.rating,
+    games_played = excluded.games_played,
+    wins         = excluded.wins,
+    updated_at   = excluded.updated_at
+`)
+const resetAllEloStmt = db.prepare(`DELETE FROM player_elo`)
+
+const insertResultStmt = db.prepare(
+  `INSERT INTO game_results (id, date, teams_json, winner, source, created_at)
+   VALUES (?, ?, ?, ?, ?, ?)`,
+)
+const getAllResultsStmt = db.prepare(
+  `SELECT id, date, teams_json, winner, source FROM game_results ORDER BY created_at DESC`,
+)
 
 export function createRoom() {
   const now = Date.now()
@@ -125,6 +165,73 @@ export function resetRoom(roomId) {
 /** Delete rooms untouched for longer than maxAgeMs. Returns rows removed. */
 export function pruneRooms(maxAgeMs) {
   return pruneStmt.run(Date.now() - maxAgeMs).changes
+}
+
+export function getPlayerRatingsMap() {
+  const rows = getAllPlayerEloStmt.all()
+  const map = new Map()
+  for (const row of rows) {
+    map.set(row.name, { rating: row.rating, gamesPlayed: row.games_played })
+  }
+  return map
+}
+
+export function getLeaderboard() {
+  return getAllPlayerEloStmt.all().map((r) => ({
+    name: r.name,
+    rating: Math.round(r.rating),
+    games_played: r.games_played,
+    wins: r.wins,
+  }))
+}
+
+export function applyEloChanges(changes) {
+  const now = Date.now()
+  const apply = db.transaction(() => {
+    for (const [name, { delta, oldRating, won, gamesPlayed }] of changes) {
+      const currentRow = getPlayerEloStmt.get(name)
+      const currentRating = currentRow?.rating ?? oldRating
+      const currentGames = currentRow?.games_played ?? gamesPlayed
+      const currentWins = currentRow?.wins ?? 0
+      upsertPlayerEloStmt.run(
+        name,
+        Math.max(100, currentRating + delta),
+        currentGames + 1,
+        currentWins + (won ? 1 : 0),
+        now,
+      )
+    }
+  })
+  apply()
+}
+
+export function getResultsForRecalculation() {
+  return db
+    .prepare(`SELECT teams_json FROM game_results ORDER BY created_at ASC`)
+    .all()
+    .map((r) => JSON.parse(r.teams_json))
+}
+
+export function resetElo() {
+  resetAllEloStmt.run()
+}
+
+export function getAllResults() {
+  return getAllResultsStmt.all().map((row) => ({
+    id: row.id,
+    date: row.date,
+    teams: JSON.parse(row.teams_json),
+    winner: row.winner,
+    source: row.source,
+  }))
+}
+
+export function saveResult({ teams, winner, source }) {
+  const now = Date.now()
+  const id = genId(10)
+  const date = new Date(now).toISOString()
+  insertResultStmt.run(id, date, JSON.stringify(teams), winner, source || 'custom', now)
+  return { id, date, teams, winner, source: source || 'custom' }
 }
 
 export default db
