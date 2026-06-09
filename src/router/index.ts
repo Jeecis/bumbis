@@ -9,9 +9,15 @@ const routes = [
   },
   {
     path: '/wheel',
+    name: 'WheelLocal',
+    component: () => import('@/pages/WheelLocalPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Wheel' },
+  },
+  {
+    path: '/wheel/:wheelId',
     name: 'Wheel',
     component: () => import('@/pages/WheelPage.vue'),
-    meta: { layout: 'BlankLayout', title: 'BUMBIS | Wheel' },
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Shared Wheel' },
   },
   {
     path: '/match/:roomId',
