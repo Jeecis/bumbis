@@ -1,12 +1,6 @@
-export const pairDefaultBallers = [
-  'Mārcis',
-  'Linda',
-  'Emīls',
-  'Robis',
-  'Jēkabs',
-  'Alberts',
-  'Eduards',
-] as const
+import pairDefaultBallersJson from '../../shared/defaultBallers.json'
+
+export const pairDefaultBallers: readonly string[] = pairDefaultBallersJson
 
 export const wheelSpinners = [
   'Zane',

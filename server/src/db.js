@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { randomBytes } from 'node:crypto'
+import { decayedRating, graceDaysFor, RATING_FLOOR } from './elo.js'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -80,6 +81,16 @@ try {
   // Column already exists.
 }
 
+// Migration: track when each player last played, for inactivity decay.
+try {
+  db.exec(`ALTER TABLE player_elo ADD COLUMN last_played_at INTEGER`)
+} catch {
+  // Column already exists.
+}
+// Backfill: seed last_played_at from updated_at so existing players are
+// immediately subject to decay rather than being exempt until their next game.
+db.exec(`UPDATE player_elo SET last_played_at = updated_at WHERE last_played_at IS NULL`)
+
 // URL-safe id from a restricted alphabet (no ambiguous chars like 0/O/1/l/I).
 const ID_ALPHABET = '23456789abcdefghijkmnpqrstuvwxyz'
 
@@ -116,18 +127,21 @@ const resetRoomStmt = db.prepare(
 )
 const pruneStmt = db.prepare(`DELETE FROM rooms WHERE updated_at < ?`)
 
-const getPlayerEloStmt = db.prepare(`SELECT name, rating, games_played FROM player_elo WHERE name = ?`)
+const getPlayerEloStmt = db.prepare(
+  `SELECT name, rating, games_played, wins, last_played_at FROM player_elo WHERE name = ?`,
+)
 const getAllPlayerEloStmt = db.prepare(
-  `SELECT name, rating, games_played, wins FROM player_elo ORDER BY rating DESC`,
+  `SELECT name, rating, games_played, wins, last_played_at FROM player_elo ORDER BY rating DESC`,
 )
 const upsertPlayerEloStmt = db.prepare(`
-  INSERT INTO player_elo (name, rating, games_played, wins, updated_at)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO player_elo (name, rating, games_played, wins, last_played_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(name) DO UPDATE SET
-    rating       = excluded.rating,
-    games_played = excluded.games_played,
-    wins         = excluded.wins,
-    updated_at   = excluded.updated_at
+    rating         = excluded.rating,
+    games_played   = excluded.games_played,
+    wins           = excluded.wins,
+    last_played_at = excluded.last_played_at,
+    updated_at     = excluded.updated_at
 `)
 const resetAllEloStmt = db.prepare(`DELETE FROM player_elo`)
 
@@ -230,37 +244,55 @@ export function pruneRooms(maxAgeMs) {
   return pruneStmt.run(Date.now() - maxAgeMs).changes
 }
 
-export function getPlayerRatingsMap() {
+export function getPlayerRatingsMap(asOf = Date.now()) {
   const rows = getAllPlayerEloStmt.all()
   const map = new Map()
   for (const row of rows) {
-    map.set(row.name, { rating: row.rating, gamesPlayed: row.games_played })
+    map.set(row.name, {
+      rating: decayedRating(row.rating, row.last_played_at, asOf, graceDaysFor(row.name)),
+      gamesPlayed: row.games_played,
+    })
   }
   return map
 }
 
-export function getLeaderboard() {
-  return getAllPlayerEloStmt.all().map((r) => ({
-    name: r.name,
-    rating: Math.round(r.rating),
-    games_played: r.games_played,
-    wins: r.wins,
-  }))
+export function getLeaderboard(asOf = Date.now()) {
+  return (
+    getAllPlayerEloStmt
+      .all()
+      .map((r) => ({
+        name: r.name,
+        rating: Math.round(decayedRating(r.rating, r.last_played_at, asOf, graceDaysFor(r.name))),
+        games_played: r.games_played,
+        wins: r.wins,
+      }))
+      // Decay can reorder players relative to the stored-rating ordering.
+      .sort((a, b) => b.rating - a.rating)
+  )
 }
 
-export function applyEloChanges(changes) {
-  const now = Date.now()
+/**
+ * Apply a game's ELO deltas. `playedAt` (epoch ms) is when the game happened —
+ * it becomes each participant's new last-played time, and any inactivity decay
+ * accrued up to that moment is banked into the base rating before the delta is
+ * added (so returning after a long break does not refund the decayed points).
+ */
+export function applyEloChanges(changes, playedAt = Date.now()) {
   const apply = db.transaction(() => {
+    const now = Date.now()
     for (const [name, { delta, oldRating, won, gamesPlayed }] of changes) {
       const currentRow = getPlayerEloStmt.get(name)
-      const currentRating = currentRow?.rating ?? oldRating
+      const baseRating = currentRow
+        ? decayedRating(currentRow.rating, currentRow.last_played_at, playedAt, graceDaysFor(name))
+        : oldRating
       const currentGames = currentRow?.games_played ?? gamesPlayed
       const currentWins = currentRow?.wins ?? 0
       upsertPlayerEloStmt.run(
         name,
-        Math.max(100, currentRating + delta),
+        Math.max(RATING_FLOOR, baseRating + delta),
         currentGames + 1,
         currentWins + (won ? 1 : 0),
+        playedAt,
         now,
       )
     }
@@ -274,9 +306,9 @@ export function deleteResult(id) {
 
 export function getResultsForRecalculation() {
   return db
-    .prepare(`SELECT teams_json FROM game_results ORDER BY created_at ASC`)
+    .prepare(`SELECT teams_json, created_at FROM game_results ORDER BY created_at ASC`)
     .all()
-    .map((r) => JSON.parse(r.teams_json))
+    .map((r) => ({ teams: JSON.parse(r.teams_json), playedAt: r.created_at }))
 }
 
 export function resetElo() {
@@ -298,7 +330,7 @@ export function saveResult({ teams, winner, source }) {
   const id = genId(10)
   const date = new Date(now).toISOString()
   insertResultStmt.run(id, date, JSON.stringify(teams), winner, source || 'custom', now)
-  return { id, date, teams, winner, source: source || 'custom' }
+  return { id, date, teams, winner, source: source || 'custom', createdAt: now }
 }
 
 // --- Wheel helpers ------------------------------------------------------------
