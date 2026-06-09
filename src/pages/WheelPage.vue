@@ -183,72 +183,52 @@
           </div>
 
           <div class="space-y-8">
-            <!-- Check-in -->
+            <!-- Add spinners -->
             <div
               class="bg-surface-container-low rounded-[2rem] p-8 shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
             >
-              <template v-if="isCheckedIn">
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                  <div class="flex items-center gap-3">
-                    <span
-                      class="material-symbols-outlined text-3xl text-primary"
-                      style="font-variation-settings: 'FILL' 1"
-                      >check_circle</span
-                    >
-                    <div>
-                      <p
-                        class="text-on-surface-variant uppercase font-black tracking-widest text-xs"
-                      >
-                        You're on the wheel as
-                      </p>
-                      <p class="text-2xl font-black tracking-tight">{{ myName }}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="bg-secondary/15 px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-secondary hover:bg-secondary/25 transition-colors disabled:opacity-50"
-                    :disabled="busy"
-                    @click="leave"
-                  >
-                    Leave
-                  </button>
-                </div>
-              </template>
-              <template v-else>
-                <p
-                  class="text-on-surface-variant uppercase font-black tracking-widest text-sm mb-3"
-                >
-                  Join the wheel
+              <div class="flex items-center justify-between gap-4 mb-3">
+                <p class="text-on-surface-variant uppercase font-black tracking-widest text-sm">
+                  Add spinners
                 </p>
-                <form class="relative" @submit.prevent="checkIn">
-                  <input
-                    v-model="nameInput"
-                    class="w-full bg-surface-container-high border-none rounded-full py-5 px-7 text-lg font-bold focus:ring-2 focus:ring-primary-dim transition-all outline-none placeholder:text-outline-variant text-on-surface"
-                    placeholder="Your name"
-                    type="text"
-                    maxlength="40"
-                  />
-                  <button
-                    type="submit"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 pressurized-gradient-primary text-white px-6 h-12 rounded-full flex items-center justify-center font-extrabold uppercase tracking-wide hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
-                    :disabled="busy || !nameInput.trim()"
-                  >
-                    I'm in
-                  </button>
-                </form>
-                <div v-if="availableBallers.length > 0" class="flex flex-wrap gap-2 mt-4">
-                  <button
-                    v-for="name in availableBallers"
-                    :key="name"
-                    type="button"
-                    class="bg-surface-container-high px-4 py-2 rounded-full text-sm font-extrabold tracking-tight hover:bg-surface-container-highest transition-colors disabled:opacity-50"
-                    :disabled="busy"
-                    @click="quickCheckIn(name)"
-                  >
-                    {{ name }}
-                  </button>
-                </div>
-              </template>
+                <button
+                  v-if="availableSpinners.length > 0"
+                  type="button"
+                  class="bg-primary/15 px-4 py-2 rounded-full text-sm font-extrabold uppercase tracking-wide text-primary hover:bg-primary/25 transition-colors disabled:opacity-50"
+                  :disabled="busy"
+                  @click="addAllSpinners"
+                >
+                  Select all
+                </button>
+              </div>
+              <form class="relative" @submit.prevent="addSpinner">
+                <input
+                  v-model="addNameInput"
+                  class="w-full bg-surface-container-high border-none rounded-full py-5 px-7 text-lg font-bold focus:ring-2 focus:ring-primary-dim transition-all outline-none placeholder:text-outline-variant text-on-surface"
+                  placeholder="Add someone by name"
+                  type="text"
+                  maxlength="40"
+                />
+                <button
+                  type="submit"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 bg-primary text-on-primary w-12 h-12 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  :disabled="busy || !addNameInput.trim()"
+                >
+                  <span class="material-symbols-outlined text-2xl font-bold">add</span>
+                </button>
+              </form>
+              <div v-if="availableSpinners.length > 0" class="flex flex-wrap gap-2 mt-4">
+                <button
+                  v-for="name in availableSpinners"
+                  :key="name"
+                  type="button"
+                  class="bg-surface-container-high px-4 py-2 rounded-full text-sm font-extrabold tracking-tight hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+                  :disabled="busy"
+                  @click="addToWheel(name)"
+                >
+                  {{ name }}
+                </button>
+              </div>
               <p v-if="errorMsg" class="text-secondary text-sm font-bold mt-3 px-2">
                 {{ errorMsg }}
               </p>
@@ -269,20 +249,23 @@
               </div>
 
               <div v-if="players.length === 0" class="text-outline-variant text-lg font-medium">
-                Nobody yet. Share the link and join.
+                Nobody yet. Share the link and add spinners.
               </div>
               <div v-else class="flex flex-wrap gap-3">
                 <div
                   v-for="player in players"
                   :key="player.id"
-                  :class="[
-                    player.id === myPlayerId
-                      ? 'bg-primary/20 text-primary'
-                      : 'bg-surface-container-high text-on-surface',
-                    'px-5 py-3 rounded-full text-base font-extrabold tracking-tight',
-                  ]"
+                  class="bg-surface-container-high text-on-surface px-5 py-3 rounded-full flex items-center gap-3 text-base font-extrabold tracking-tight"
                 >
-                  {{ player.name }}
+                  <span>{{ player.name }}</span>
+                  <button
+                    type="button"
+                    class="material-symbols-outlined text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
+                    :disabled="busy"
+                    @click="removeFromWheel(player.id)"
+                  >
+                    close
+                  </button>
                 </div>
               </div>
             </div>
@@ -354,15 +337,12 @@ const router = useRouter()
 
 // Must match SPIN_DURATION_MS on the server (and the wheel's CSS transition).
 const SPIN_DURATION_MS = 3000
-const NAME_KEY = 'bumbis:matchName'
-const wheelPlayerKey = (id: string) => `bumbis:wheelPlayer:${id}`
 
 const wheelId = computed(() => String(route.params.wheelId ?? ''))
 const state = ref<WheelState | null>(null)
 const notFound = ref(false)
 const connectionLost = ref(false)
-const nameInput = ref('')
-const myPlayerId = ref<string | null>(null)
+const addNameInput = ref('')
 const busy = ref(false)
 const copied = ref(false)
 const errorMsg = ref('')
@@ -400,11 +380,7 @@ const players = computed(() => state.value?.players ?? [])
 const wheelNames = computed(() => players.value.map((p) => p.name))
 const spinning = computed(() => state.value?.status === 'spinning')
 const canSpin = computed(() => wheelNames.value.length > 0)
-const isCheckedIn = computed(
-  () => myPlayerId.value !== null && players.value.some((p) => p.id === myPlayerId.value),
-)
-const myName = computed(() => players.value.find((p) => p.id === myPlayerId.value)?.name ?? '')
-const availableBallers = computed(() =>
+const availableSpinners = computed(() =>
   wheelSpinners.filter((name) => !players.value.some((p) => p.name === name)),
 )
 const shareUrl = computed(() => `${window.location.origin}/wheel/${wheelId.value}`)
@@ -523,11 +499,6 @@ function applyState(next: WheelState) {
   connectionLost.value = false
   // The colour palette is shared, so mirror whatever the server reports.
   useDativaColors.value = next.dativaColors
-  // Drop a stale identity if the server no longer lists us (removed/expired).
-  if (myPlayerId.value && !next.players.some((p) => p.id === myPlayerId.value)) {
-    myPlayerId.value = null
-    localStorage.removeItem(wheelPlayerKey(wheelId.value))
-  }
   handleSpinState(next)
 }
 
@@ -541,38 +512,54 @@ async function toggleDativa() {
   }
 }
 
-async function quickCheckIn(name: string) {
-  nameInput.value = name
-  await checkIn()
-}
-
-async function checkIn() {
-  const name = nameInput.value.trim()
-  if (!name || busy.value) return
+/** Add someone to the wheel without claiming them as your own identity. */
+async function addToWheel(name: string) {
+  const trimmed = name.trim()
+  if (!trimmed || busy.value) return
   busy.value = true
   errorMsg.value = ''
   try {
-    const { player } = await joinWheel(wheelId.value, name)
-    myPlayerId.value = player.id
-    localStorage.setItem(wheelPlayerKey(wheelId.value), player.id)
-    localStorage.setItem(NAME_KEY, player.name)
+    await joinWheel(wheelId.value, trimmed)
   } catch (err) {
-    errorMsg.value = err instanceof Error ? err.message : 'Could not join'
+    errorMsg.value = err instanceof Error ? err.message : 'Could not add spinner'
   } finally {
     busy.value = false
   }
 }
 
-async function leave() {
-  if (!myPlayerId.value || busy.value) return
+async function addSpinner() {
+  const name = addNameInput.value
+  await addToWheel(name)
+  if (!errorMsg.value) addNameInput.value = ''
+}
+
+/** Add every default spinner not already on the wheel. */
+async function addAllSpinners() {
+  if (busy.value) return
+  const toAdd = [...availableSpinners.value]
+  if (toAdd.length === 0) return
   busy.value = true
   errorMsg.value = ''
   try {
-    await leaveWheel(wheelId.value, myPlayerId.value)
-    myPlayerId.value = null
-    localStorage.removeItem(wheelPlayerKey(wheelId.value))
+    for (const name of toAdd) {
+      await joinWheel(wheelId.value, name)
+    }
   } catch (err) {
-    errorMsg.value = err instanceof Error ? err.message : 'Could not leave'
+    errorMsg.value = err instanceof Error ? err.message : 'Could not add spinners'
+  } finally {
+    busy.value = false
+  }
+}
+
+/** Remove anyone from the wheel. */
+async function removeFromWheel(playerId: string) {
+  if (busy.value) return
+  busy.value = true
+  errorMsg.value = ''
+  try {
+    await leaveWheel(wheelId.value, playerId)
+  } catch (err) {
+    errorMsg.value = err instanceof Error ? err.message : 'Could not remove spinner'
   } finally {
     busy.value = false
   }
@@ -629,10 +616,6 @@ async function load() {
     notFound.value = true
     return
   }
-
-  // Restore prior identity for this wheel and the last name typed anywhere.
-  myPlayerId.value = localStorage.getItem(wheelPlayerKey(id))
-  nameInput.value = localStorage.getItem(NAME_KEY) ?? ''
 
   bootstrapping = true
   try {
