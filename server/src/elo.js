@@ -1,3 +1,7 @@
+import { createRequire } from 'node:module'
+
+const _require = createRequire(import.meta.url)
+
 /**
  * Bumbis Score-Weighted Team ELO
  *
@@ -55,18 +59,9 @@ export const RATING_FLOOR = 800 // no rating ever drops below this (losses or de
 export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// The regular roster ("default ballers") — kept in sync with
-// src/utils/defaultBallers.ts (pairDefaultBallers) on the frontend. They are
-// expected to play often, so their decay grace is shorter.
-const DEFAULT_BALLERS = new Set([
-  'Mārcis',
-  'Linda',
-  'Emīls',
-  'Robis',
-  'Jēkabs',
-  'Alberts',
-  'Eduards',
-])
+// The regular roster ("default ballers") — defined once in shared/defaultBallers.json
+// and imported by both the server and the frontend so the two lists cannot drift.
+const DEFAULT_BALLERS = new Set(_require('../../shared/defaultBallers.json'))
 
 /** Inactivity grace period (days) for a given player. */
 export function graceDaysFor(name) {

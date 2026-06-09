@@ -87,6 +87,9 @@ try {
 } catch {
   // Column already exists.
 }
+// Backfill: seed last_played_at from updated_at so existing players are
+// immediately subject to decay rather than being exempt until their next game.
+db.exec(`UPDATE player_elo SET last_played_at = updated_at WHERE last_played_at IS NULL`)
 
 // URL-safe id from a restricted alphabet (no ambiguous chars like 0/O/1/l/I).
 const ID_ALPHABET = '23456789abcdefghijkmnpqrstuvwxyz'
@@ -276,6 +279,7 @@ export function getLeaderboard(asOf = Date.now()) {
  */
 export function applyEloChanges(changes, playedAt = Date.now()) {
   const apply = db.transaction(() => {
+    const now = Date.now()
     for (const [name, { delta, oldRating, won, gamesPlayed }] of changes) {
       const currentRow = getPlayerEloStmt.get(name)
       const baseRating = currentRow
@@ -289,7 +293,7 @@ export function applyEloChanges(changes, playedAt = Date.now()) {
         currentGames + 1,
         currentWins + (won ? 1 : 0),
         playedAt,
-        playedAt,
+        now,
       )
     }
   })
