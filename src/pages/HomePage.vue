@@ -30,6 +30,14 @@
         >
           Spin the wheel
         </RouterLink>
+        <button
+          type="button"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-60"
+          :disabled="creatingWheel"
+          @click="startWheel"
+        >
+          {{ creatingWheel ? 'Creating…' : 'Shared wheel' }}
+        </button>
       </div>
 
       <!-- Live matchmaking entry point -->
@@ -312,6 +320,7 @@
 <script lang="ts">
 import { pairDefaultBallers } from '@/utils/defaultBallers'
 import { createRoom } from '@/utils/matchmaking'
+import { createWheel } from '@/utils/wheel'
 import { computed, defineComponent, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -323,6 +332,7 @@ export default defineComponent({
   setup() {
     const router = useRouter()
     const creatingRoom = ref(false)
+    const creatingWheel = ref(false)
     const matchmakingError = ref('')
     const roster = ref<string[]>([])
     const newName = ref('')
@@ -374,6 +384,19 @@ export default defineComponent({
       }
     }
 
+    async function startWheel() {
+      if (creatingWheel.value) return
+      creatingWheel.value = true
+      matchmakingError.value = ''
+      try {
+        const { id } = await createWheel()
+        router.push(`/wheel/${id}`)
+      } catch {
+        matchmakingError.value = 'Could not start a wheel. Is the matchmaking service running?'
+        creatingWheel.value = false
+      }
+    }
+
     function shuffle<T>(arr: T[]): T[] {
       const copy = [...arr]
       for (let i = copy.length - 1; i > 0; i--) {
@@ -413,8 +436,10 @@ export default defineComponent({
 
     return {
       creatingRoom,
+      creatingWheel,
       matchmakingError,
       startMatchmaking,
+      startWheel,
       roster,
       newName,
       pairs,

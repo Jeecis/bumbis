@@ -1,21 +1,30 @@
 import express from 'express'
 import {
   addPlayer,
+  addWheelPlayer,
   applyEloChanges,
   createRoom,
   deleteResult,
+  createWheel,
+  finalizeWheelSpin,
   getAllResults,
   getLeaderboard,
   getPlayerRatingsMap,
   getResultsForRecalculation,
   getRoomState,
+  getWheelState,
   pruneRooms,
+  pruneWheels,
   removePlayer,
+  removeWheelPlayer,
   resetElo,
   resetRoom,
   roomExists,
   saveResult,
   setSplit,
+  setWheelPalette,
+  setWheelSpinning,
+  wheelExists,
 } from './db.js'
 import { INITIAL_RATING, computeEloChanges } from './elo.js'
 
@@ -24,6 +33,8 @@ const MAX_NAME_LEN = 40
 const MAX_PLAYERS = 64
 const MAX_TEAMS = 12
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // rooms expire 24h after the last change
+const SPIN_DURATION_MS = 3000 // must match the wheel's CSS transition on the client
+const SPIN_GRACE_MS = 400 // small buffer before the server removes the winner
 
 const app = express()
 app.use(express.json({ limit: '16kb' }))
@@ -37,6 +48,19 @@ function broadcast(roomId) {
   const streams = subscribers.get(roomId)
   if (!streams || streams.size === 0) return
   const state = getRoomState(roomId)
+  const payload = `data: ${JSON.stringify(state)}\n\n`
+  for (const res of streams) res.write(payload)
+}
+
+// wheelId -> Set of open response streams (separate fan-out from matchmaking).
+const wheelSubscribers = new Map()
+// wheelId -> finalize timeout, so a new spin or deletion can clear a pending one.
+const spinTimers = new Map()
+
+function broadcastWheel(wheelId) {
+  const streams = wheelSubscribers.get(wheelId)
+  if (!streams || streams.size === 0) return
+  const state = getWheelState(wheelId)
   const payload = `data: ${JSON.stringify(state)}\n\n`
   for (const res of streams) res.write(payload)
 }
@@ -157,6 +181,122 @@ app.post('/api/rooms/:id/reset', (req, res) => {
   res.json(getRoomState(id))
 })
 
+// --- Spin the Wheel -----------------------------------------------------------
+app.post('/api/wheels', (_req, res) => {
+  const id = createWheel()
+  res.status(201).json({ id })
+})
+
+app.get('/api/wheels/:id', (req, res) => {
+  const state = getWheelState(req.params.id)
+  if (!state) return res.status(404).json({ error: 'Wheel not found' })
+  res.json(state)
+})
+
+app.get('/api/wheels/:id/events', (req, res) => {
+  const { id } = req.params
+  if (!wheelExists(id)) return res.status(404).end()
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  })
+  res.write('retry: 3000\n\n')
+  res.write(`data: ${JSON.stringify(getWheelState(id))}\n\n`)
+
+  let streams = wheelSubscribers.get(id)
+  if (!streams) {
+    streams = new Set()
+    wheelSubscribers.set(id, streams)
+  }
+  streams.add(res)
+
+  const ping = setInterval(() => res.write(': ping\n\n'), 25000)
+
+  req.on('close', () => {
+    clearInterval(ping)
+    streams.delete(res)
+    if (streams.size === 0) wheelSubscribers.delete(id)
+  })
+})
+
+app.post('/api/wheels/:id/players', (req, res) => {
+  const { id } = req.params
+  if (!wheelExists(id)) return res.status(404).json({ error: 'Wheel not found' })
+
+  const name = normalizeName(req.body?.name)
+  if (!name) return res.status(400).json({ error: 'Name is required' })
+  if (name.length > MAX_NAME_LEN) return res.status(400).json({ error: 'Name is too long' })
+
+  const state = getWheelState(id)
+  const existing = state.players.find((p) => p.name === name)
+  if (!existing && state.players.length >= MAX_PLAYERS) {
+    return res.status(409).json({ error: 'Wheel is full' })
+  }
+
+  const player = addWheelPlayer(id, name)
+  broadcastWheel(id)
+  res.status(201).json({ player, wheel: getWheelState(id) })
+})
+
+app.delete('/api/wheels/:id/players/:playerId', (req, res) => {
+  const { id, playerId } = req.params
+  if (!wheelExists(id)) return res.status(404).json({ error: 'Wheel not found' })
+  removeWheelPlayer(id, playerId)
+  broadcastWheel(id)
+  res.json(getWheelState(id))
+})
+
+app.post('/api/wheels/:id/palette', (req, res) => {
+  const { id } = req.params
+  if (!wheelExists(id)) return res.status(404).json({ error: 'Wheel not found' })
+  setWheelPalette(id, Boolean(req.body?.dativa))
+  broadcastWheel(id)
+  res.json(getWheelState(id))
+})
+
+app.post('/api/wheels/:id/spin', (req, res) => {
+  const { id } = req.params
+  const state = getWheelState(id)
+  if (!state) return res.status(404).json({ error: 'Wheel not found' })
+  if (state.status === 'spinning') {
+    return res.status(409).json({ error: 'Wheel is already spinning' })
+  }
+  if (state.players.length < 1) {
+    return res.status(400).json({ error: 'Add someone to the wheel first' })
+  }
+
+  // Server decides the winner so every client lands on the same result. The
+  // rotation math mirrors the client wheel: pointer sits at 90° (3 o'clock).
+  const winnerIndex = Math.floor(Math.random() * state.players.length)
+  const winnerName = state.players[winnerIndex].name
+  const segmentAngle = 360 / state.players.length
+  const centerAngle = segmentAngle * winnerIndex + segmentAngle / 2
+  const pointerAngle = 90
+  const targetWithinTurn = (((pointerAngle - centerAngle - state.rotation) % 360) + 360) % 360
+  const rotation = state.rotation + 360 * 6 + targetWithinTurn
+  const startedAt = Date.now()
+  const spinId = `${id}-${startedAt}`
+
+  setWheelSpinning(id, { rotation, winnerName, winnerIndex, spinId, startedAt })
+  broadcastWheel(id)
+
+  // After the animation, remove the winner and return to idle (server-side so it
+  // happens once and stays in sync regardless of which clients are connected).
+  const existing = spinTimers.get(id)
+  if (existing) clearTimeout(existing)
+  const timer = setTimeout(() => {
+    spinTimers.delete(id)
+    finalizeWheelSpin(id)
+    broadcastWheel(id)
+  }, SPIN_DURATION_MS + SPIN_GRACE_MS)
+  timer.unref?.()
+  spinTimers.set(id, timer)
+
+  res.json(getWheelState(id))
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 // --- Game Results -------------------------------------------------------------
@@ -208,6 +348,8 @@ app.get('/api/elo', (_req, res) => {
 setInterval(() => {
   const removed = pruneRooms(ROOM_TTL_MS)
   if (removed > 0) console.log(`Pruned ${removed} stale room(s)`)
+  const removedWheels = pruneWheels(ROOM_TTL_MS)
+  if (removedWheels > 0) console.log(`Pruned ${removedWheels} stale wheel(s)`)
 }, 60 * 60 * 1000).unref()
 
 function recalculateElo() {
