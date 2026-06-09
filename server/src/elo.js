@@ -22,7 +22,10 @@
  *    rating rises faster per game — rewarding consistent winners.
  *
  * 5. New / non-default players start at INITIAL_RATING (1200).
- *    No special treatment — they earn their true rating through play.
+ *    Provisional penalty: players with fewer than PROVISIONAL_GAMES games have
+ *    their effective rating reduced linearly toward (INITIAL_RATING - PROVISIONAL_PENALTY).
+ *    This treats unknowns conservatively — their team's expected strength is lower,
+ *    so a win counts more and a loss costs less for everyone on that team.
  *
  * 6. "Carry" is handled structurally, not by penalising individuals.
  *    A 1600-rated player paired with a 600-rated player has a lower team avg,
@@ -35,6 +38,17 @@
  */
 
 export const INITIAL_RATING = 1200
+
+// New players are assumed to be below average until they've played enough games.
+// Their effective rating for team-strength calculation is penalised by up to
+// PROVISIONAL_PENALTY points, shrinking linearly to zero by PROVISIONAL_GAMES.
+const PROVISIONAL_GAMES = 10
+const PROVISIONAL_PENALTY = 200
+
+function provisionalRating(rating, gamesPlayed) {
+  if (gamesPlayed >= PROVISIONAL_GAMES) return rating
+  return rating - PROVISIONAL_PENALTY * (1 - gamesPlayed / PROVISIONAL_GAMES)
+}
 
 export function kFactor(gamesPlayed) {
   if (gamesPlayed < 10) return 40
@@ -82,7 +96,10 @@ export function computeEloChanges(teams, currentRatings) {
     // Anonymous teams use INITIAL_RATING as a placeholder for opponent strength.
     const ratings =
       players.length > 0
-        ? players.map((name) => currentRatings.get(name)?.rating ?? INITIAL_RATING)
+        ? players.map((name) => {
+            const entry = currentRatings.get(name)
+            return provisionalRating(entry?.rating ?? INITIAL_RATING, entry?.gamesPlayed ?? 0)
+          })
         : [INITIAL_RATING]
     const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
     const size = Math.max(1, players.length)

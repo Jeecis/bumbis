@@ -477,10 +477,7 @@
 
     <!-- Auth modal -->
     <transition name="fade">
-      <div
-        v-if="authModalOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center px-6"
-      >
+      <div v-if="authModalOpen" class="fixed inset-0 z-50 flex items-center justify-center px-6">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="cancelAuth" />
         <div
           class="relative bg-surface-container-low rounded-[2rem] p-8 w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.6)]"
@@ -525,10 +522,7 @@
 
     <!-- Delete confirmation modal -->
     <transition name="fade">
-      <div
-        v-if="confirmDeleteId"
-        class="fixed inset-0 z-50 flex items-center justify-center px-6"
-      >
+      <div v-if="confirmDeleteId" class="fixed inset-0 z-50 flex items-center justify-center px-6">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="cancelDelete" />
         <div
           class="relative bg-surface-container-low rounded-[2rem] p-8 w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.6)]"
@@ -664,9 +658,7 @@ function setTeamCount(n: number) {
 }
 
 const knownPlayers = ref<string[]>([])
-const allKnownPlayers = computed(() => [
-  ...new Set([...pairDefaultBallers, ...knownPlayers.value]),
-])
+const allKnownPlayers = computed(() => [...new Set([...pairDefaultBallers, ...knownPlayers.value])])
 
 const allAddedPlayers = computed(() => new Set(logTeams.value.flatMap((t) => t.players)))
 
@@ -755,8 +747,7 @@ async function loadHistory() {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-inferrable-types
-const APP_PASSWORD: string = '123niga123'
+const APP_PASSWORD = '123niga123'
 const AUTH_KEY = 'bumbis:auth'
 
 const isAuthenticated = ref(localStorage.getItem(AUTH_KEY) === APP_PASSWORD)
