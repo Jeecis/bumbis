@@ -66,6 +66,45 @@ export function resetRoom(id: string): Promise<Room> {
   return request(`/rooms/${id}/reset`, { method: 'POST' })
 }
 
+export interface TeamResult {
+  name: string
+  players: string[]
+  score: number
+}
+
+export interface GameResult {
+  id: string
+  date: string
+  teams: TeamResult[]
+  winner: string
+  source: 'lobby' | 'custom'
+}
+
+export function getResults(): Promise<GameResult[]> {
+  return request('/results')
+}
+
+export function saveGameResult(
+  teams: TeamResult[],
+  source: 'lobby' | 'custom',
+): Promise<GameResult> {
+  return request('/results', {
+    method: 'POST',
+    body: JSON.stringify({ teams, source }),
+  })
+}
+
+export interface PlayerRanking {
+  name: string
+  rating: number
+  games_played: number
+  wins: number
+}
+
+export function getLeaderboard(): Promise<PlayerRanking[]> {
+  return request('/elo')
+}
+
 /**
  * Subscribe to live room updates via Server-Sent Events. `onUpdate` fires on
  * connect and on every change (check-in, leave, split, reset); `onError` fires

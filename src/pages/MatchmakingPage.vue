@@ -17,12 +17,20 @@
           </p>
           <h1 class="text-4xl font-black tracking-tight">Matchmaking</h1>
         </div>
-        <RouterLink
-          to="/"
-          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
-        >
-          Home
-        </RouterLink>
+        <div class="flex gap-3">
+          <RouterLink
+            to="/results"
+            class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+          >
+            Results
+          </RouterLink>
+          <RouterLink
+            to="/"
+            class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+          >
+            Home
+          </RouterLink>
+        </div>
       </div>
 
       <!-- Room missing / expired -->
@@ -122,6 +130,18 @@
                 I'm in
               </button>
             </form>
+            <div v-if="availableBallers.length > 0" class="flex flex-wrap gap-2 mt-4">
+              <button
+                v-for="name in availableBallers"
+                :key="name"
+                type="button"
+                class="bg-surface-container-high px-4 py-2 rounded-full text-sm font-extrabold tracking-tight hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+                :disabled="busy"
+                @click="quickCheckIn(name)"
+              >
+                {{ name }}
+              </button>
+            </div>
           </template>
           <p v-if="errorMsg" class="text-secondary text-sm font-bold mt-3 px-2">{{ errorMsg }}</p>
         </div>
@@ -168,7 +188,7 @@
             >
               Teams
             </h2>
-            <div class="flex gap-3">
+            <div class="flex flex-wrap gap-3">
               <button
                 type="button"
                 class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-50"
@@ -184,6 +204,13 @@
                 @click="reroll"
               >
                 Re-roll
+              </button>
+              <button
+                type="button"
+                class="pressurized-gradient-primary px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-white hover:brightness-110 transition-all"
+                @click="goLogResult"
+              >
+                Log Result
               </button>
             </div>
           </div>
@@ -279,6 +306,7 @@ import {
   subscribeRoom,
   type Room,
 } from '@/utils/matchmaking'
+import { pairDefaultBallers } from '@/utils/defaultBallers'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -308,6 +336,9 @@ const players = computed(() => room.value?.players ?? [])
 const isCheckedIn = computed(
   () => myPlayerId.value !== null && players.value.some((p) => p.id === myPlayerId.value),
 )
+const availableBallers = computed(() =>
+  pairDefaultBallers.filter((name) => !players.value.some((p) => p.name === name)),
+)
 const myName = computed(() => players.value.find((p) => p.id === myPlayerId.value)?.name ?? '')
 const canSplit = computed(() => players.value.length >= 2)
 const shareUrl = computed(() => `${window.location.origin}/match/${roomId.value}`)
@@ -324,6 +355,11 @@ function applyRoom(next: Room) {
     myPlayerId.value = null
     localStorage.removeItem(playerKey(roomId.value))
   }
+}
+
+async function quickCheckIn(name: string) {
+  nameInput.value = name
+  await checkIn()
 }
 
 async function checkIn() {
@@ -397,6 +433,13 @@ async function copyLink() {
 async function startNew() {
   const { id } = await createRoom()
   router.push(`/match/${id}`)
+}
+
+function goLogResult() {
+  if (!room.value?.teams) return
+  sessionStorage.setItem('bumbis:log-teams', JSON.stringify(room.value.teams))
+  sessionStorage.setItem('bumbis:log-teams:source', 'lobby')
+  router.push('/results')
 }
 
 async function load() {

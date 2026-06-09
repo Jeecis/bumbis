@@ -1,14 +1,22 @@
 import express from 'express'
 import {
   addPlayer,
+  applyEloChanges,
   createRoom,
+  getAllResults,
+  getLeaderboard,
+  getPlayerRatingsMap,
+  getResultsForRecalculation,
   getRoomState,
   pruneRooms,
   removePlayer,
+  resetElo,
   resetRoom,
   roomExists,
+  saveResult,
   setSplit,
 } from './db.js'
+import { INITIAL_RATING, computeEloChanges } from './elo.js'
 
 const PORT = Number(process.env.PORT) || 8787
 const MAX_NAME_LEN = 40
@@ -150,12 +158,66 @@ app.post('/api/rooms/:id/reset', (req, res) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
+// --- Game Results -------------------------------------------------------------
+app.get('/api/results', (_req, res) => {
+  res.json(getAllResults())
+})
+
+app.post('/api/results', (req, res) => {
+  const { teams, source } = req.body || {}
+  if (!Array.isArray(teams) || teams.length < 2) {
+    return res.status(400).json({ error: 'At least 2 teams required' })
+  }
+  for (const team of teams) {
+    if (typeof team.score !== 'number' || team.score < 0) {
+      return res.status(400).json({ error: 'Each team must have a valid score' })
+    }
+  }
+  const maxScore = Math.max(...teams.map((t) => t.score))
+  const topTeams = teams.filter((t) => t.score === maxScore)
+  const winnerName = topTeams
+    .map((t, i) => t.name || `Team ${teams.indexOf(t) + 1}`)
+    .join(' & ')
+  const entry = saveResult({ teams, winner: winnerName, source: source || 'custom' })
+
+  // Update ELO ratings based on this result.
+  try {
+    const currentRatings = getPlayerRatingsMap()
+    const changes = computeEloChanges(teams, currentRatings)
+    if (changes.size > 0) applyEloChanges(changes)
+  } catch (err) {
+    console.error('ELO update failed:', err)
+  }
+
+  res.status(201).json(entry)
+})
+
+app.get('/api/elo', (_req, res) => {
+  res.json(getLeaderboard())
+})
+
 // --- Housekeeping -------------------------------------------------------------
 setInterval(() => {
   const removed = pruneRooms(ROOM_TTL_MS)
   if (removed > 0) console.log(`Pruned ${removed} stale room(s)`)
 }, 60 * 60 * 1000).unref()
 
+// Bootstrap: if results exist but ELO table is empty, replay all results in order.
+function bootstrapElo() {
+  if (getLeaderboard().length > 0) return
+  const allTeams = getResultsForRecalculation()
+  if (allTeams.length === 0) return
+
+  console.log(`Bootstrapping ELO from ${allTeams.length} historical result(s)…`)
+  resetElo()
+  for (const teams of allTeams) {
+    const changes = computeEloChanges(teams, getPlayerRatingsMap())
+    if (changes.size > 0) applyEloChanges(changes)
+  }
+  console.log(`ELO bootstrapped for ${getLeaderboard().length} player(s).`)
+}
+
 app.listen(PORT, () => {
   console.log(`Bumbis matchmaking API listening on :${PORT}`)
+  bootstrapElo()
 })
