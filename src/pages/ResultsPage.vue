@@ -106,9 +106,7 @@
             v-for="(team, i) in logTeams"
             :key="i"
             :class="[
-              team.score === 10
-                ? 'ring-2 ring-primary bg-primary/5'
-                : 'bg-surface-container-low',
+              team.score === 10 ? 'ring-2 ring-primary bg-primary/5' : 'bg-surface-container-low',
               'rounded-[2rem] p-6 shadow-[0_20px_40px_rgba(0,0,0,0.2)] transition-all',
             ]"
           >
@@ -125,9 +123,7 @@
 
             <!-- Players -->
             <div class="mb-5">
-              <p
-                class="text-on-surface-variant uppercase font-black tracking-widest text-xs mb-2"
-              >
+              <p class="text-on-surface-variant uppercase font-black tracking-widest text-xs mb-2">
                 Players
               </p>
               <div class="flex flex-wrap gap-2 mb-2">
@@ -196,9 +192,7 @@
 
             <!-- Score -->
             <div>
-              <p
-                class="text-on-surface-variant uppercase font-black tracking-widest text-xs mb-3"
-              >
+              <p class="text-on-surface-variant uppercase font-black tracking-widest text-xs mb-3">
                 Score
               </p>
               <div class="flex items-center gap-4">
@@ -220,7 +214,12 @@
                     'text-4xl font-black w-16 text-center bg-transparent outline-none border-b-2 border-transparent focus:border-primary transition-colors [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
                   ]"
                   style="font-family: 'Plus Jakarta Sans', sans-serif"
-                  @input="team.score = Math.min(10, Math.max(0, Number(($event.target as HTMLInputElement).value) || 0))"
+                  @input="
+                    team.score = Math.min(
+                      10,
+                      Math.max(0, Number(($event.target as HTMLInputElement).value) || 0),
+                    )
+                  "
                 />
                 <button
                   type="button"
@@ -333,9 +332,7 @@
           v-else-if="rankings.length === 0"
           class="bg-surface-container-low rounded-[2rem] p-10 text-center shadow-[0_20px_40px_rgba(0,0,0,0.2)]"
         >
-          <span class="material-symbols-outlined text-6xl text-outline-variant"
-            >leaderboard</span
-          >
+          <span class="material-symbols-outlined text-6xl text-outline-variant">leaderboard</span>
           <p class="text-on-surface-variant font-bold mt-4">No ranked players yet.</p>
           <button
             type="button"
@@ -352,7 +349,8 @@
               class="w-8 text-center text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >#</span
             >
-            <span class="flex-1 text-on-surface-variant uppercase font-black tracking-widest text-xs"
+            <span
+              class="flex-1 text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >Player</span
             >
             <span
@@ -373,35 +371,64 @@
             v-for="(player, idx) in rankings"
             :key="player.name"
             :class="[
-              idx === 0 ? 'bg-yellow-500/10 ring-1 ring-yellow-500/30' :
-              idx === 1 ? 'bg-slate-400/10 ring-1 ring-slate-400/20' :
-              idx === 2 ? 'bg-amber-700/10 ring-1 ring-amber-700/20' :
-              'bg-surface-container-low',
+              idx === 0
+                ? 'bg-yellow-500/10 ring-1 ring-yellow-500/30'
+                : idx === 1
+                  ? 'bg-slate-400/10 ring-1 ring-slate-400/20'
+                  : idx === 2
+                    ? 'bg-amber-700/10 ring-1 ring-amber-700/20'
+                    : 'bg-surface-container-low',
               'rounded-2xl px-4 py-3 flex items-center gap-4 shadow-sm transition-all',
             ]"
           >
             <!-- Rank -->
             <div class="w-8 text-center">
-              <span v-if="idx === 0" class="material-symbols-outlined text-yellow-400 text-xl" style="font-variation-settings: 'FILL' 1">workspace_premium</span>
-              <span v-else-if="idx === 1" class="material-symbols-outlined text-slate-400 text-xl" style="font-variation-settings: 'FILL' 1">workspace_premium</span>
-              <span v-else-if="idx === 2" class="material-symbols-outlined text-amber-700 text-xl" style="font-variation-settings: 'FILL' 1">workspace_premium</span>
-              <span v-else class="text-on-surface-variant font-extrabold text-sm">{{ idx + 1 }}</span>
+              <span
+                v-if="idx === 0"
+                class="material-symbols-outlined text-yellow-400 text-xl"
+                style="font-variation-settings: 'FILL' 1"
+                >workspace_premium</span
+              >
+              <span
+                v-else-if="idx === 1"
+                class="material-symbols-outlined text-slate-400 text-xl"
+                style="font-variation-settings: 'FILL' 1"
+                >workspace_premium</span
+              >
+              <span
+                v-else-if="idx === 2"
+                class="material-symbols-outlined text-amber-700 text-xl"
+                style="font-variation-settings: 'FILL' 1"
+                >workspace_premium</span
+              >
+              <span v-else class="text-on-surface-variant font-extrabold text-sm">{{
+                idx + 1
+              }}</span>
             </div>
             <!-- Name -->
             <span class="flex-1 font-extrabold tracking-tight truncate">{{ player.name }}</span>
             <!-- ELO -->
             <span
               :class="[
-                player.rating > 1200 ? 'text-primary' : player.rating < 1200 ? 'text-secondary' : 'text-on-surface',
+                player.rating > 1200
+                  ? 'text-primary'
+                  : player.rating < 1200
+                    ? 'text-secondary'
+                    : 'text-on-surface',
                 'w-14 text-right font-black text-lg',
               ]"
               style="font-family: 'Plus Jakarta Sans', sans-serif"
-            >{{ player.rating }}</span>
+              >{{ player.rating }}</span
+            >
             <!-- Games played -->
-            <span class="w-10 text-right text-on-surface-variant font-bold text-sm">{{ player.games_played }}</span>
+            <span class="w-10 text-right text-on-surface-variant font-bold text-sm">{{
+              player.games_played
+            }}</span>
             <!-- Win % -->
             <span class="w-12 text-right font-extrabold text-sm">
-              {{ player.games_played > 0 ? Math.round((player.wins / player.games_played) * 100) : 0 }}%
+              {{
+                player.games_played > 0 ? Math.round((player.wins / player.games_played) * 100) : 0
+              }}%
             </span>
           </div>
 
@@ -464,16 +491,19 @@ import { RouterLink, useRoute } from 'vue-router'
 const route = useRoute()
 const teamPalette = ['#97a9ff', '#ff7162', '#9BDA62', '#5F5FED', '#ffb347', '#2ec4b6']
 
-const tabs = [
+type Tab = 'log' | 'history' | 'rankings'
+const tabs: { id: Tab; label: string }[] = [
   { id: 'log', label: 'Log Game' },
   { id: 'history', label: 'History' },
   { id: 'rankings', label: 'Rankings' },
 ]
-const validTabs = ['log', 'history', 'rankings'] as const
-const initialTab = validTabs.includes(route.query.tab as typeof validTabs[number])
-  ? (route.query.tab as typeof validTabs[number])
-  : 'log'
-const activeTab = ref<'log' | 'history' | 'rankings'>(initialTab)
+const validTabs: Tab[] = ['log', 'history', 'rankings']
+const queryTab = route.query.tab
+const initialTab: Tab =
+  typeof queryTab === 'string' && (validTabs as readonly string[]).includes(queryTab)
+    ? (queryTab as Tab)
+    : 'log'
+const activeTab = ref<Tab>(initialTab)
 
 // ── Log Game ─────────────────────────────────────────────────────────────────
 const TEAMS_KEY = 'bumbis:log-teams'
@@ -533,8 +563,7 @@ const allAddedPlayers = computed(() => new Set(logTeams.value.flatMap((t) => t.p
 
 function availableDefaultBallers(teamIndex: number) {
   return pairDefaultBallers.filter(
-    (name) =>
-      !allAddedPlayers.value.has(name) && !logTeams.value[teamIndex].players.includes(name),
+    (name) => !allAddedPlayers.value.has(name) && !logTeams.value[teamIndex].players.includes(name),
   )
 }
 
@@ -655,6 +684,7 @@ function formatDate(iso: string) {
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
