@@ -138,6 +138,7 @@ const insertResultStmt = db.prepare(
 const getAllResultsStmt = db.prepare(
   `SELECT id, date, teams_json, winner, source FROM game_results ORDER BY created_at DESC`,
 )
+const deleteResultStmt = db.prepare(`DELETE FROM game_results WHERE id = ?`)
 
 // --- Wheel statements ---------------------------------------------------------
 const insertWheelStmt = db.prepare(
@@ -265,6 +266,10 @@ export function applyEloChanges(changes) {
     }
   })
   apply()
+}
+
+export function deleteResult(id) {
+  return deleteResultStmt.run(id).changes > 0
 }
 
 export function getResultsForRecalculation() {

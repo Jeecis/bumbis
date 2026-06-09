@@ -4,6 +4,7 @@ import {
   addWheelPlayer,
   applyEloChanges,
   createRoom,
+  deleteResult,
   createWheel,
   finalizeWheelSpin,
   getAllResults,
@@ -332,6 +333,13 @@ app.post('/api/results', (req, res) => {
   res.status(201).json(entry)
 })
 
+app.delete('/api/results/:id', (req, res) => {
+  const deleted = deleteResult(req.params.id)
+  if (!deleted) return res.status(404).json({ error: 'Result not found' })
+  recalculateElo()
+  res.json({ ok: true })
+})
+
 app.get('/api/elo', (_req, res) => {
   res.json(getLeaderboard())
 })
@@ -344,19 +352,21 @@ setInterval(() => {
   if (removedWheels > 0) console.log(`Pruned ${removedWheels} stale wheel(s)`)
 }, 60 * 60 * 1000).unref()
 
-// Bootstrap: if results exist but ELO table is empty, replay all results in order.
-function bootstrapElo() {
-  if (getLeaderboard().length > 0) return
-  const allTeams = getResultsForRecalculation()
-  if (allTeams.length === 0) return
-
-  console.log(`Bootstrapping ELO from ${allTeams.length} historical result(s)…`)
+function recalculateElo() {
   resetElo()
-  for (const teams of allTeams) {
+  for (const teams of getResultsForRecalculation()) {
     const changes = computeEloChanges(teams, getPlayerRatingsMap())
     if (changes.size > 0) applyEloChanges(changes)
   }
-  console.log(`ELO bootstrapped for ${getLeaderboard().length} player(s).`)
+}
+
+// Always recalculate ELO from scratch on startup so algorithm changes take effect.
+function bootstrapElo() {
+  const allTeams = getResultsForRecalculation()
+  if (allTeams.length === 0) return
+  console.log(`Recalculating ELO from ${allTeams.length} result(s)…`)
+  recalculateElo()
+  console.log(`ELO ready — ${getLeaderboard().length} ranked player(s).`)
 }
 
 app.listen(PORT, () => {

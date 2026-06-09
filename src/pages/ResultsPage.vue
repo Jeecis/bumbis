@@ -271,13 +271,23 @@
                 {{ formatDate(result.date) }}
               </p>
             </div>
-            <div class="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full">
-              <span
-                class="material-symbols-outlined text-lg text-primary"
-                style="font-variation-settings: 'FILL' 1"
-                >emoji_events</span
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full">
+                <span
+                  class="material-symbols-outlined text-lg text-primary"
+                  style="font-variation-settings: 'FILL' 1"
+                  >emoji_events</span
+                >
+                <span class="text-sm font-extrabold text-primary">{{ result.winner }}</span>
+              </div>
+              <button
+                type="button"
+                class="w-9 h-9 rounded-full bg-secondary/10 flex items-center justify-center hover:bg-secondary/20 active:scale-95 transition-all disabled:opacity-40"
+                :disabled="deletingId === result.id"
+                @click="promptDelete(result.id)"
               >
-              <span class="text-sm font-extrabold text-primary">{{ result.winner }}</span>
+                <span class="material-symbols-outlined text-base text-secondary">delete</span>
+              </button>
             </div>
           </div>
 
@@ -448,7 +458,7 @@
         <button
           :disabled="!canSubmit || submitting"
           class="flex items-center justify-center pressurized-gradient-primary rounded-full py-5 w-full shadow-[0_20px_40px_rgba(0,0,0,0.4)] hover:brightness-110 hover:scale-[1.02] transition-all active:scale-95 duration-150 disabled:opacity-50 disabled:hover:scale-100"
-          @click="submitResult"
+          @click="requireAuth(submitResult)"
         >
           <span
             class="material-symbols-outlined mr-3 text-3xl text-white"
@@ -465,6 +475,87 @@
       </div>
     </div>
 
+    <!-- Auth modal -->
+    <transition name="fade">
+      <div v-if="authModalOpen" class="fixed inset-0 z-50 flex items-center justify-center px-6">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="cancelAuth" />
+        <div
+          class="relative bg-surface-container-low rounded-[2rem] p-8 w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.6)]"
+        >
+          <h2
+            class="text-xl font-black tracking-tight mb-1"
+            style="font-family: 'Plus Jakarta Sans', sans-serif"
+          >
+            Password required
+          </h2>
+          <p class="text-on-surface-variant text-sm mb-6">Enter the password to continue.</p>
+          <form @submit.prevent="submitAuth">
+            <input
+              v-model="authPassword"
+              type="password"
+              placeholder="Password"
+              class="w-full bg-surface-container-high border-none rounded-full py-4 px-6 font-bold focus:ring-2 focus:ring-primary transition-all outline-none placeholder:text-outline-variant mb-2"
+              autofocus
+            />
+            <p v-if="authError" class="text-secondary text-sm font-bold px-2 mb-3">
+              {{ authError }}
+            </p>
+            <div class="flex gap-3 mt-4">
+              <button
+                type="button"
+                class="flex-1 py-3 rounded-full bg-surface-container-high font-extrabold uppercase tracking-wide text-sm hover:bg-surface-container-highest transition-colors"
+                @click="cancelAuth"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="flex-1 py-3 rounded-full pressurized-gradient-primary text-white font-extrabold uppercase tracking-wide text-sm hover:brightness-110 transition-all"
+              >
+                Confirm
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Delete confirmation modal -->
+    <transition name="fade">
+      <div v-if="confirmDeleteId" class="fixed inset-0 z-50 flex items-center justify-center px-6">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="cancelDelete" />
+        <div
+          class="relative bg-surface-container-low rounded-[2rem] p-8 w-full max-w-sm shadow-[0_40px_80px_rgba(0,0,0,0.6)]"
+        >
+          <h2
+            class="text-xl font-black tracking-tight mb-1"
+            style="font-family: 'Plus Jakarta Sans', sans-serif"
+          >
+            Delete match?
+          </h2>
+          <p class="text-on-surface-variant text-sm mb-6">
+            This will remove the result and recalculate all ELO ratings.
+          </p>
+          <div class="flex gap-3">
+            <button
+              type="button"
+              class="flex-1 py-3 rounded-full bg-surface-container-high font-extrabold uppercase tracking-wide text-sm hover:bg-surface-container-highest transition-colors"
+              @click="cancelDelete"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="flex-1 py-3 rounded-full bg-secondary text-on-secondary font-extrabold uppercase tracking-wide text-sm hover:brightness-110 transition-all"
+              @click="doDelete"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- Background Orbs -->
     <div
       class="fixed -top-24 -left-24 w-96 h-96 bg-primary opacity-5 blur-[120px] rounded-full pointer-events-none"
@@ -480,6 +571,7 @@ import {
   type GameResult,
   type PlayerRanking,
   type TeamResult,
+  deleteGameResult,
   getLeaderboard,
   getResults,
   saveGameResult,
@@ -527,6 +619,12 @@ onMounted(() => {
   if (initialTab === 'rankings') loadRankings()
   else if (initialTab === 'history') loadHistory()
 
+  getLeaderboard()
+    .then((lb) => {
+      knownPlayers.value = lb.map((p) => p.name)
+    })
+    .catch(() => {})
+
   const stored = sessionStorage.getItem(TEAMS_KEY)
   const src = sessionStorage.getItem(SOURCE_KEY)
   sessionStorage.removeItem(TEAMS_KEY)
@@ -559,10 +657,13 @@ function setTeamCount(n: number) {
   }
 }
 
+const knownPlayers = ref<string[]>([])
+const allKnownPlayers = computed(() => [...new Set([...pairDefaultBallers, ...knownPlayers.value])])
+
 const allAddedPlayers = computed(() => new Set(logTeams.value.flatMap((t) => t.players)))
 
 function availableDefaultBallers(teamIndex: number) {
-  return pairDefaultBallers.filter(
+  return allKnownPlayers.value.filter(
     (name) => !allAddedPlayers.value.has(name) && !logTeams.value[teamIndex].players.includes(name),
   )
 }
@@ -570,7 +671,7 @@ function availableDefaultBallers(teamIndex: number) {
 function autocomplete(teamIndex: number) {
   const input = playerInputs.value[teamIndex]?.trim().toLowerCase()
   if (!input) return []
-  return pairDefaultBallers.filter(
+  return allKnownPlayers.value.filter(
     (name) =>
       name.toLowerCase().includes(input) && !logTeams.value[teamIndex].players.includes(name),
   )
@@ -643,6 +744,76 @@ async function loadHistory() {
     history.value = await getResults()
   } finally {
     loadingHistory.value = false
+  }
+}
+
+const APP_PASSWORD = '123niga123'
+const AUTH_KEY = 'bumbis:auth'
+
+const isAuthenticated = ref(localStorage.getItem(AUTH_KEY) === APP_PASSWORD)
+
+// Generic auth modal
+const authModalOpen = ref(false)
+const authPassword = ref('')
+const authError = ref('')
+const pendingAction = ref<(() => void) | null>(null)
+
+function requireAuth(action: () => void) {
+  if (isAuthenticated.value) {
+    action()
+  } else {
+    pendingAction.value = action
+    authModalOpen.value = true
+    authPassword.value = ''
+    authError.value = ''
+  }
+}
+
+function submitAuth() {
+  if (authPassword.value !== APP_PASSWORD) {
+    authError.value = 'Wrong password.'
+    return
+  }
+  localStorage.setItem(AUTH_KEY, APP_PASSWORD)
+  isAuthenticated.value = true
+  authModalOpen.value = false
+  const action = pendingAction.value
+  pendingAction.value = null
+  action?.()
+}
+
+function cancelAuth() {
+  authModalOpen.value = false
+  pendingAction.value = null
+  authPassword.value = ''
+  authError.value = ''
+}
+
+// Delete confirm modal (shown after auth)
+const deletingId = ref<string | null>(null)
+const confirmDeleteId = ref<string | null>(null)
+
+function promptDelete(id: string) {
+  requireAuth(() => {
+    confirmDeleteId.value = id
+  })
+}
+
+function cancelDelete() {
+  confirmDeleteId.value = null
+}
+
+async function doDelete() {
+  const id = confirmDeleteId.value
+  if (!id) return
+  confirmDeleteId.value = null
+  deletingId.value = id
+  try {
+    await deleteGameResult(id)
+    history.value = history.value.filter((r) => r.id !== id)
+    rankings.value = []
+  } finally {
+    deletingId.value = null
   }
 }
 

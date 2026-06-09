@@ -22,15 +22,33 @@
  *    rating rises faster per game — rewarding consistent winners.
  *
  * 5. New / non-default players start at INITIAL_RATING (1200).
- *    No special treatment — they earn their true rating through play.
+ *    Provisional penalty: players with fewer than PROVISIONAL_GAMES games have
+ *    their effective rating reduced linearly toward (INITIAL_RATING - PROVISIONAL_PENALTY).
+ *    This treats unknowns conservatively — their team's expected strength is lower,
+ *    so a win counts more and a loss costs less for everyone on that team.
  *
  * 6. "Carry" is handled structurally, not by penalising individuals.
  *    A 1600-rated player paired with a 600-rated player has a lower team avg,
  *    making the team the underdog. A win gives everyone on that team more ELO;
  *    a loss costs everyone less. The disparity is priced into the expected value.
+ *
+ * 7. Anonymous teams (no resolvable players) still participate in expected-value
+ *    calculation at INITIAL_RATING so that named opponents get meaningful ELO
+ *    changes even when the opposing team has no tracked identity.
  */
 
 export const INITIAL_RATING = 1200
+
+// New players are assumed to be below average until they've played enough games.
+// Their effective rating for team-strength calculation is penalised by up to
+// PROVISIONAL_PENALTY points, shrinking linearly to zero by PROVISIONAL_GAMES.
+const PROVISIONAL_GAMES = 10
+const PROVISIONAL_PENALTY = 200
+
+function provisionalRating(rating, gamesPlayed) {
+  if (gamesPlayed >= PROVISIONAL_GAMES) return rating
+  return rating - PROVISIONAL_PENALTY * (1 - gamesPlayed / PROVISIONAL_GAMES)
+}
 
 export function kFactor(gamesPlayed) {
   if (gamesPlayed < 10) return 40
@@ -47,49 +65,69 @@ function expectedScore(effA, effB) {
 }
 
 /**
+ * Resolve the effective player list for a team.
+ *
+ * Priority:
+ *   1. Explicit players array (if non-empty)
+ *   2. Team name as a single player — only when the name is not the default
+ *      "Team N" pattern, so auto-names don't pollute the rankings.
+ *   3. Empty → anonymous (used for opponent strength only, no ELO update)
+ */
+function resolvePlayers(team) {
+  if (Array.isArray(team.players) && team.players.length > 0) return team.players
+  if (team.name && !/^Team \d+$/i.test(team.name.trim())) return [team.name.trim()]
+  return []
+}
+
+/**
  * Compute ELO deltas for a single game.
  *
- * @param {Array<{ players: string[], score: number }>} teams
+ * @param {Array<{ name?: string, players: string[], score: number }>} teams
  * @param {Map<string, { rating: number, gamesPlayed: number }>} currentRatings
  * @returns {Map<string, { delta: number, oldRating: number, won: boolean, gamesPlayed: number }>}
  */
 export function computeEloChanges(teams, currentRatings) {
-  // Only consider teams that have at least one named player.
-  const valid = teams.filter((t) => Array.isArray(t.players) && t.players.length > 0)
-  if (valid.length < 2) return new Map()
+  if (!Array.isArray(teams) || teams.length < 2) return new Map()
 
-  const maxScore = Math.max(...valid.map((t) => t.score))
+  const maxScore = Math.max(...teams.map((t) => t.score))
 
-  // Enrich each team with derived metrics.
-  const enriched = valid.map((team) => {
-    const ratings = team.players.map(
-      (name) => currentRatings.get(name)?.rating ?? INITIAL_RATING,
-    )
+  const enriched = teams.map((team) => {
+    const players = resolvePlayers(team)
+    // Anonymous teams use INITIAL_RATING as a placeholder for opponent strength.
+    const ratings =
+      players.length > 0
+        ? players.map((name) => {
+            const entry = currentRatings.get(name)
+            return provisionalRating(entry?.rating ?? INITIAL_RATING, entry?.gamesPlayed ?? 0)
+          })
+        : [INITIAL_RATING]
     const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
+    const size = Math.max(1, players.length)
     return {
-      players: team.players,
+      players,
       score: team.score,
-      avgRating,
-      // Size adjustment: solo player has R_eff = R; a duo has R_eff = R*√2 ≈ R*1.41
-      effRating: avgRating * Math.sqrt(team.players.length),
+      effRating: avgRating * Math.sqrt(size),
       won: team.score === maxScore,
+      anonymous: players.length === 0,
     }
   })
+
+  // Need at least one team with a trackable identity.
+  if (enriched.every((t) => t.anonymous)) return new Map()
 
   const n = enriched.length
   const changes = new Map()
 
   for (let i = 0; i < n; i++) {
     const teamA = enriched[i]
+    if (teamA.anonymous) continue
 
-    // Average the pairwise (S - E) across all opponents.
     let pairwiseSum = 0
     for (let j = 0; j < n; j++) {
       if (i === j) continue
       const teamB = enriched[j]
       const E = expectedScore(teamA.effRating, teamB.effRating)
       const total = teamA.score + teamB.score
-      // If somehow both scores are 0, treat as a draw (S = 0.5).
       const S = total > 0 ? teamA.score / total : 0.5
       pairwiseSum += S - E
     }

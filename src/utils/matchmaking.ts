@@ -105,6 +105,10 @@ export function getLeaderboard(): Promise<PlayerRanking[]> {
   return request('/elo')
 }
 
+export function deleteGameResult(id: string): Promise<{ ok: boolean }> {
+  return request(`/results/${id}`, { method: 'DELETE' })
+}
+
 /**
  * Subscribe to live room updates via Server-Sent Events. `onUpdate` fires on
  * connect and on every change (check-in, leave, split, reset); `onError` fires
