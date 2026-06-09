@@ -321,16 +321,18 @@ app.post('/api/results', (req, res) => {
     .join(' & ')
   const entry = saveResult({ teams, winner: winnerName, source: source || 'custom' })
 
-  // Update ELO ratings based on this result.
+  // Update ELO ratings based on this result. Ratings are decayed up to the
+  // moment of the game first, so the delta builds on the inactivity-adjusted base.
   try {
-    const currentRatings = getPlayerRatingsMap()
+    const currentRatings = getPlayerRatingsMap(entry.createdAt)
     const changes = computeEloChanges(teams, currentRatings)
-    if (changes.size > 0) applyEloChanges(changes)
+    if (changes.size > 0) applyEloChanges(changes, entry.createdAt)
   } catch (err) {
     console.error('ELO update failed:', err)
   }
 
-  res.status(201).json(entry)
+  const { createdAt: _omit, ...response } = entry
+  res.status(201).json(response)
 })
 
 app.delete('/api/results/:id', (req, res) => {
@@ -354,9 +356,9 @@ setInterval(() => {
 
 function recalculateElo() {
   resetElo()
-  for (const teams of getResultsForRecalculation()) {
-    const changes = computeEloChanges(teams, getPlayerRatingsMap())
-    if (changes.size > 0) applyEloChanges(changes)
+  for (const { teams, playedAt } of getResultsForRecalculation()) {
+    const changes = computeEloChanges(teams, getPlayerRatingsMap(playedAt))
+    if (changes.size > 0) applyEloChanges(changes, playedAt)
   }
 }
 

@@ -17,7 +17,7 @@
  *    Per-player delta = K * average(S - E over all opponents).
  *
  * 4. Individual K-factor progression
- *    K=40 (< 10 games) → K=30 (10-29) → K=20 (30+)
+ *    K=120 (< 10 games) → K=90 (10-29) → K=60 (30+)
  *    Infrequent but always-winning players keep high K longer, so their
  *    rating rises faster per game — rewarding consistent winners.
  *
@@ -37,7 +37,59 @@
  *    changes even when the opposing team has no tracked identity.
  */
 
-export const INITIAL_RATING = 1200
+export const INITIAL_RATING = 1200 // starting rating for default ballers / unknown opponents
+export const NON_BALLER_INITIAL_RATING = 1000 // newcomers outside the regular roster start lower
+export const WIN_BONUS = 1 // flat rating bonus added on top of the ELO delta for winning a game
+
+// --- Inactivity decay ---------------------------------------------------------
+// Players lose rating for every full day they don't play, once a grace period
+// passes. Decay is DERIVED from a player's last-played timestamp and the current
+// time — it is never baked into the stored "rating after last game". That keeps
+// it deterministic: a full ELO rebuild (which replays only game results) and the
+// daily-changing leaderboard both reproduce the same decayed value from the
+// stored rating + last-played date, with no separate scheduled job to drift.
+export const DECAY_PER_DAY = 2 // rating points lost per inactive day
+export const DECAY_GRACE_DAYS = 7 // free inactive days before decay starts
+export const DEFAULT_BALLER_GRACE_DAYS = 3 // shorter grace for the regulars
+export const RATING_FLOOR = 800 // no rating ever drops below this (losses or decay)
+export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// The regular roster ("default ballers") — kept in sync with
+// src/utils/defaultBallers.ts (pairDefaultBallers) on the frontend. They are
+// expected to play often, so their decay grace is shorter.
+const DEFAULT_BALLERS = new Set([
+  'Mārcis',
+  'Linda',
+  'Emīls',
+  'Robis',
+  'Jēkabs',
+  'Alberts',
+  'Eduards',
+])
+
+/** Inactivity grace period (days) for a given player. */
+export function graceDaysFor(name) {
+  return DEFAULT_BALLERS.has(name) ? DEFAULT_BALLER_GRACE_DAYS : DECAY_GRACE_DAYS
+}
+
+/** Starting rating for a never-before-seen player. */
+export function initialRatingFor(name) {
+  return DEFAULT_BALLERS.has(name) ? INITIAL_RATING : NON_BALLER_INITIAL_RATING
+}
+
+/**
+ * Rating after inactivity decay between `lastPlayedAt` and `asOf` (epoch ms).
+ * Counts whole elapsed days only; the first `graceDays` are free. Decay bottoms
+ * out at DECAY_FLOOR and never raises a rating already below it.
+ */
+export function decayedRating(rating, lastPlayedAt, asOf, graceDays = DECAY_GRACE_DAYS) {
+  if (!lastPlayedAt || !asOf || rating <= DECAY_FLOOR) return rating
+  const elapsedDays = Math.floor((asOf - lastPlayedAt) / DAY_MS)
+  const decayDays = Math.max(0, elapsedDays - graceDays)
+  if (decayDays === 0) return rating
+  return Math.max(DECAY_FLOOR, rating - decayDays * DECAY_PER_DAY)
+}
 
 // New players are assumed to be below average until they've played enough games.
 // Their effective rating for team-strength calculation is penalised by up to
@@ -51,9 +103,9 @@ function provisionalRating(rating, gamesPlayed) {
 }
 
 export function kFactor(gamesPlayed) {
-  if (gamesPlayed < 10) return 40
-  if (gamesPlayed < 30) return 30
-  return 20
+  if (gamesPlayed < 10) return 120
+  if (gamesPlayed < 30) return 90
+  return 60
 }
 
 /**
@@ -98,7 +150,7 @@ export function computeEloChanges(teams, currentRatings) {
       players.length > 0
         ? players.map((name) => {
             const entry = currentRatings.get(name)
-            return provisionalRating(entry?.rating ?? INITIAL_RATING, entry?.gamesPlayed ?? 0)
+            return provisionalRating(entry?.rating ?? initialRatingFor(name), entry?.gamesPlayed ?? 0)
           })
         : [INITIAL_RATING]
     const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
@@ -136,8 +188,8 @@ export function computeEloChanges(teams, currentRatings) {
     for (const name of teamA.players) {
       const gp = currentRatings.get(name)?.gamesPlayed ?? 0
       changes.set(name, {
-        delta: kFactor(gp) * pairwiseDelta,
-        oldRating: currentRatings.get(name)?.rating ?? INITIAL_RATING,
+        delta: kFactor(gp) * pairwiseDelta + (teamA.won ? WIN_BONUS : 0),
+        oldRating: currentRatings.get(name)?.rating ?? initialRatingFor(name),
         won: teamA.won,
         gamesPlayed: gp,
       })
