@@ -26,7 +26,14 @@ import {
   setWheelSpinning,
   wheelExists,
 } from './db.js'
-import { INITIAL_RATING, computeEloChanges } from './elo.js'
+import {
+  RATING_FLOOR,
+  computeEloChanges,
+  decayedRating,
+  graceDaysFor,
+  initialRatingFor,
+  predictWinProbabilities,
+} from './elo.js'
 import { computeFunFacts } from './funfacts.js'
 
 const PORT = Number(process.env.PORT) || 8787
@@ -98,6 +105,16 @@ app.get('/api/rooms/:id', (req, res) => {
   const state = getRoomState(req.params.id)
   if (!state) return res.status(404).json({ error: 'Room not found' })
   res.json(state)
+})
+
+// Predicted win probability per team once a room has been split. Probabilities
+// are aligned to the room's team order and sum to 1; empty when not yet split.
+app.get('/api/rooms/:id/prediction', (req, res) => {
+  const state = getRoomState(req.params.id)
+  if (!state) return res.status(404).json({ error: 'Room not found' })
+  if (state.status !== 'split' || !state.teams) return res.json({ probabilities: [] })
+  const probabilities = predictWinProbabilities(state.teams, getPlayerRatingsMap())
+  res.json({ probabilities })
 })
 
 app.get('/api/rooms/:id/events', (req, res) => {
@@ -344,7 +361,7 @@ app.delete('/api/results/:id', (req, res) => {
 })
 
 app.get('/api/elo', (_req, res) => {
-  res.json(getLeaderboard())
+  res.json(getLeaderboardWithDailyChange())
 })
 
 app.get('/api/funfacts', (_req, res) => {
@@ -356,6 +373,65 @@ app.get('/api/funfacts', (_req, res) => {
     res.status(500).json({ error: 'Could not compute fun facts' })
   }
 })
+
+// Epoch ms for the most recent local midnight (start of "today").
+function startOfTodayMs() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/**
+ * Replay every result that happened strictly before `cutoff` into an in-memory
+ * ratings map, mirroring applyEloChanges/getPlayerRatingsMap without touching
+ * the DB. Used to reconstruct the leaderboard as it stood at a past instant.
+ */
+function ratingsAsOf(cutoff) {
+  const state = new Map() // name -> { rating, gamesPlayed, wins, lastPlayedAt }
+  for (const { teams, playedAt } of getResultsForRecalculation()) {
+    if (playedAt >= cutoff) break // results come back sorted ascending by time
+    const current = new Map()
+    for (const [name, r] of state) {
+      current.set(name, {
+        rating: decayedRating(r.rating, r.lastPlayedAt, playedAt, graceDaysFor(name)),
+        gamesPlayed: r.gamesPlayed,
+      })
+    }
+    const changes = computeEloChanges(teams, current)
+    for (const [name, { delta, won }] of changes) {
+      const prev = state.get(name)
+      const base = prev
+        ? decayedRating(prev.rating, prev.lastPlayedAt, playedAt, graceDaysFor(name))
+        : initialRatingFor(name)
+      state.set(name, {
+        rating: Math.max(RATING_FLOOR, base + delta),
+        gamesPlayed: (prev?.gamesPlayed ?? 0) + 1,
+        wins: (prev?.wins ?? 0) + (won ? 1 : 0),
+        lastPlayedAt: playedAt,
+      })
+    }
+  }
+  return state
+}
+
+/**
+ * Current leaderboard plus each player's net rating change since local midnight.
+ * The baseline is the player's rating as of the start of today (decay included);
+ * players first seen today are compared against their initial rating.
+ */
+function getLeaderboardWithDailyChange() {
+  const startOfToday = startOfTodayMs()
+  const baseline = ratingsAsOf(startOfToday)
+  return getLeaderboard().map((player) => {
+    const prev = baseline.get(player.name)
+    if (!prev) {
+      return { ...player, today_change: player.rating - initialRatingFor(player.name) }
+    }
+    const grace = graceDaysFor(player.name)
+    const baseRating = Math.round(decayedRating(prev.rating, prev.lastPlayedAt, startOfToday, grace))
+    return { ...player, today_change: player.rating - baseRating }
+  })
+}
 
 // --- Housekeeping -------------------------------------------------------------
 setInterval(() => {

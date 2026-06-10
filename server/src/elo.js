@@ -53,8 +53,8 @@ export const WIN_BONUS = 1 // flat rating bonus added on top of the ELO delta fo
 // daily-changing leaderboard both reproduce the same decayed value from the
 // stored rating + last-played date, with no separate scheduled job to drift.
 export const DECAY_PER_DAY = 2 // rating points lost per inactive day
-export const DECAY_GRACE_DAYS = 14 // free inactive days before decay starts
-export const DEFAULT_BALLER_GRACE_DAYS = 14 // grace for the regulars (currently same as everyone)
+export const DECAY_GRACE_DAYS = 7 // free inactive days before decay starts
+export const DEFAULT_BALLER_GRACE_DAYS = 7 // grace for the regulars (currently same as everyone)
 export const RATING_FLOOR = 800 // no rating ever drops below this (losses or decay)
 export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -127,6 +127,41 @@ export function resolvePlayers(team) {
 }
 
 /**
+ * Size-adjusted effective rating for a resolved lineup. Newcomers get the
+ * provisional penalty; an empty lineup is treated as a single INITIAL_RATING
+ * player (anonymous opponent strength).
+ */
+function effectiveRating(players, currentRatings) {
+  const ratings =
+    players.length > 0
+      ? players.map((name) => {
+          const entry = currentRatings.get(name)
+          return provisionalRating(entry?.rating ?? initialRatingFor(name), entry?.gamesPlayed ?? 0)
+        })
+      : [INITIAL_RATING]
+  const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
+  const size = Math.max(1, players.length)
+  return avgRating * Math.sqrt(size)
+}
+
+/**
+ * Predicted win probability per team for an upcoming game, using the same
+ * effective-rating model as computeEloChanges. Generalises the pairwise Elo
+ * expected score to N teams via Bradley–Terry (softmax over rating/400 in base
+ * 10), so the two-team case matches expectedScore exactly. `teams` may be plain
+ * lineups (string[][]) or team objects; returns probabilities aligned to the
+ * input order, summing to 1.
+ */
+export function predictWinProbabilities(teams, currentRatings) {
+  if (!Array.isArray(teams) || teams.length === 0) return []
+  const lineups = teams.map((t) => (Array.isArray(t) ? t : resolvePlayers(t)))
+  const weights = lineups.map((players) => Math.pow(10, effectiveRating(players, currentRatings) / 400))
+  const total = weights.reduce((a, b) => a + b, 0)
+  if (total === 0) return weights.map(() => 1 / weights.length)
+  return weights.map((w) => w / total)
+}
+
+/**
  * Compute ELO deltas for a single game.
  *
  * @param {Array<{ name?: string, players: string[], score: number }>} teams
@@ -140,23 +175,11 @@ export function computeEloChanges(teams, currentRatings) {
 
   const enriched = teams.map((team) => {
     const players = resolvePlayers(team)
-    // Anonymous teams use INITIAL_RATING as a placeholder for opponent strength.
-    const ratings =
-      players.length > 0
-        ? players.map((name) => {
-            const entry = currentRatings.get(name)
-            return provisionalRating(
-              entry?.rating ?? initialRatingFor(name),
-              entry?.gamesPlayed ?? 0,
-            )
-          })
-        : [INITIAL_RATING]
-    const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
-    const size = Math.max(1, players.length)
+    // Anonymous teams fall back to INITIAL_RATING as a placeholder for opponent strength.
     return {
       players,
       score: team.score,
-      effRating: avgRating * Math.sqrt(size),
+      effRating: effectiveRating(players, currentRatings),
       won: team.score === maxScore,
       anonymous: players.length === 0,
     }

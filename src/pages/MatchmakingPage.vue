@@ -219,12 +219,51 @@
             <div
               v-for="(team, index) in room.teams"
               :key="index"
-              class="bg-surface-container-low rounded-[2rem] p-6 shadow-lg"
+              :class="[
+                index === favoredTeam
+                  ? 'ring-2 ring-primary bg-primary/5'
+                  : 'bg-surface-container-low',
+                'rounded-[2rem] p-6 shadow-lg transition-all',
+              ]"
             >
               <div class="flex items-center gap-3 mb-4">
                 <span class="w-4 h-4 rounded-full" :style="{ backgroundColor: teamColor(index) }" />
                 <h3 class="text-xl font-black tracking-tight uppercase">Team {{ index + 1 }}</h3>
+                <span
+                  v-if="index === favoredTeam"
+                  class="ml-auto flex items-center gap-1 bg-primary/15 text-primary px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide"
+                >
+                  <span
+                    class="material-symbols-outlined text-sm"
+                    style="font-variation-settings: 'FILL' 1"
+                    >trending_up</span
+                  >
+                  Favored
+                </span>
               </div>
+
+              <!-- ELO win prediction -->
+              <div v-if="winPct(index) !== null" class="mb-4">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-xs uppercase font-black tracking-widest text-on-surface-variant"
+                    >Win chance</span
+                  >
+                  <span
+                    :class="[
+                      index === favoredTeam ? 'text-primary' : 'text-on-surface-variant',
+                      'text-sm font-black',
+                    ]"
+                    >{{ winPct(index) }}%</span
+                  >
+                </div>
+                <div class="h-2 rounded-full bg-surface-container-high overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :style="{ width: `${winPct(index)}%`, backgroundColor: teamColor(index) }"
+                  />
+                </div>
+              </div>
+
               <ul class="space-y-2">
                 <li
                   v-for="name in team"
@@ -299,6 +338,7 @@
 import {
   createRoom,
   getRoom,
+  getRoomPrediction,
   joinRoom,
   leaveRoom,
   resetRoom,
@@ -342,6 +382,37 @@ const availableBallers = computed(() =>
 const myName = computed(() => players.value.find((p) => p.id === myPlayerId.value)?.name ?? '')
 const canSplit = computed(() => players.value.length >= 2)
 const shareUrl = computed(() => `${window.location.origin}/match/${roomId.value}`)
+
+// ELO-based win prediction for the current split, aligned to team order.
+const prediction = ref<number[]>([])
+const favoredTeam = computed(() => {
+  if (prediction.value.length === 0) return null
+  return prediction.value.reduce((best, p, i) => (p > prediction.value[best] ? i : best), 0)
+})
+
+function winPct(index: number): number | null {
+  const p = prediction.value[index]
+  return p === undefined ? null : Math.round(p * 100)
+}
+
+async function loadPrediction() {
+  if (!room.value || room.value.status !== 'split' || !room.value.teams) {
+    prediction.value = []
+    return
+  }
+  try {
+    const { probabilities } = await getRoomPrediction(roomId.value)
+    prediction.value = probabilities
+  } catch {
+    prediction.value = []
+  }
+}
+
+// Refetch whenever the teams change (split, re-roll) and clear when not split.
+watch(
+  () => (room.value?.status === 'split' ? JSON.stringify(room.value.teams) : ''),
+  loadPrediction,
+)
 
 function teamColor(index: number) {
   return teamPalette[index % teamPalette.length]

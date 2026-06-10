@@ -383,6 +383,10 @@
               class="w-12 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >W%</span
             >
+            <span
+              class="w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              >Today</span
+            >
           </div>
 
           <div
@@ -471,10 +475,25 @@
                 player.games_played > 0 ? Math.round((player.wins / player.games_played) * 100) : 0
               }}%
             </span>
+            <!-- Today's gain/loss -->
+            <span class="w-14 text-right">
+              <span
+                v-if="player.today_change !== 0"
+                class="inline-flex items-center justify-end gap-0.5 font-extrabold text-sm"
+                :class="player.today_change > 0 ? 'text-green-500' : 'text-red-500'"
+              >
+                <span
+                  class="material-symbols-outlined text-base"
+                  style="font-variation-settings: 'FILL' 1"
+                  >{{ player.today_change > 0 ? 'arrow_upward' : 'arrow_downward' }}</span
+                >{{ Math.abs(player.today_change) }}
+              </span>
+              <span v-else class="text-on-surface-variant font-bold text-sm">–</span>
+            </span>
           </div>
 
           <p class="text-xs text-on-surface-variant px-4 pt-2">
-            Starting ELO: 1200 · GP = games played · W% = win rate
+            Starting ELO: 1200 · GP = games played · W% = win rate · Today = ELO gained/lost today
           </p>
         </template>
       </div>
