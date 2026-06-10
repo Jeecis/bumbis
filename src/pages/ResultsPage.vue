@@ -18,12 +18,20 @@
           </p>
           <h1 class="text-4xl font-black tracking-tight">Results</h1>
         </div>
-        <RouterLink
-          to="/"
-          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
-        >
-          Home
-        </RouterLink>
+        <div class="flex gap-3">
+          <RouterLink
+            to="/facts"
+            class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+          >
+            Fun Facts
+          </RouterLink>
+          <RouterLink
+            to="/"
+            class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+          >
+            Home
+          </RouterLink>
+        </div>
       </div>
 
       <!-- Tab bar -->
@@ -334,7 +342,7 @@
         </div>
       </div>
       <!-- ── RANKINGS TAB ─────────────────────────────────────────────── -->
-      <div v-if="activeTab === 'rankings'" class="space-y-3">
+      <div v-if="activeTab === 'rankings'" class="space-y-3" @click="openTag = null">
         <div v-if="loadingRankings" class="text-on-surface-variant text-lg font-medium px-2">
           Loading rankings…
         </div>
@@ -415,8 +423,31 @@
                 idx + 1
               }}</span>
             </div>
-            <!-- Name -->
-            <span class="flex-1 font-extrabold tracking-tight truncate">{{ player.name }}</span>
+            <!-- Name + fun-fact badge -->
+            <div class="flex-1 min-w-0">
+              <span class="block font-extrabold tracking-tight truncate">{{ player.name }}</span>
+              <button
+                v-if="funTags[player.name]"
+                type="button"
+                :class="tagToneClass(funTags[player.name].tone)"
+                class="group/tag relative mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.65rem] font-bold tracking-tight max-w-full"
+                @click.stop="toggleTag(player.name)"
+              >
+                <span class="shrink-0">{{ funTags[player.name].emoji }}</span>
+                <span class="truncate">{{ funTags[player.name].label }}</span>
+                <span
+                  v-if="tagInfo(funTags[player.name])"
+                  :class="
+                    openTag === player.name
+                      ? 'opacity-100 visible'
+                      : 'opacity-0 invisible group-hover/tag:opacity-100 group-hover/tag:visible'
+                  "
+                  class="absolute left-0 top-full z-30 mt-2 w-56 rounded-2xl bg-surface-container-highest p-3 text-left text-xs font-medium leading-relaxed text-on-surface shadow-[0_20px_40px_rgba(0,0,0,0.5)] transition-opacity"
+                >
+                  {{ tagInfo(funTags[player.name]) }}
+                </span>
+              </button>
+            </div>
             <!-- ELO -->
             <span
               :class="[
@@ -576,6 +607,8 @@ import {
   getResults,
   saveGameResult,
 } from '@/utils/matchmaking'
+import { type PlayerTag, getFunFacts } from '@/utils/funfacts'
+import { FUNFACT_INFO } from '@/utils/funfactInfo'
 import { pairDefaultBallers } from '@/utils/defaultBallers'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -821,6 +854,9 @@ async function doDelete() {
 const rankings = ref<PlayerRanking[]>([])
 const loadingRankings = ref(false)
 
+// Fun-fact badges keyed by player name (best-effort; rankings work without them).
+const funTags = ref<Record<string, PlayerTag>>({})
+
 async function loadRankings() {
   loadingRankings.value = true
   try {
@@ -828,6 +864,29 @@ async function loadRankings() {
   } finally {
     loadingRankings.value = false
   }
+  getFunFacts()
+    .then((facts) => {
+      funTags.value = facts.tags
+    })
+    .catch(() => {})
+}
+
+const TAG_TONE_CLASSES: Record<PlayerTag['tone'], string> = {
+  good: 'bg-primary/15 text-primary',
+  bad: 'bg-secondary/15 text-secondary',
+  neutral: 'bg-surface-container-high text-on-surface-variant',
+}
+function tagToneClass(tone: PlayerTag['tone']) {
+  return TAG_TONE_CLASSES[tone]
+}
+
+// Badge explanation popover: hover reveals it, tap pins it (by player name).
+const openTag = ref<string | null>(null)
+function toggleTag(name: string) {
+  openTag.value = openTag.value === name ? null : name
+}
+function tagInfo(tag: PlayerTag) {
+  return FUNFACT_INFO[tag.key]
 }
 
 watch(activeTab, (tab) => {

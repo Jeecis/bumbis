@@ -13,6 +13,12 @@
     <main class="flex-grow container mx-auto px-6 py-12 max-w-4xl pb-40">
       <div class="flex justify-end gap-3 mb-8">
         <RouterLink
+          to="/facts"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          Fun Facts
+        </RouterLink>
+        <RouterLink
           to="/results?tab=rankings"
           class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
         >
