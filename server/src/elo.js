@@ -54,7 +54,7 @@ export const WIN_BONUS = 1 // flat rating bonus added on top of the ELO delta fo
 // stored rating + last-played date, with no separate scheduled job to drift.
 export const DECAY_PER_DAY = 2 // rating points lost per inactive day
 export const DECAY_GRACE_DAYS = 14 // free inactive days before decay starts
-export const DEFAULT_BALLER_GRACE_DAYS = 14 // shorter grace for the regulars
+export const DEFAULT_BALLER_GRACE_DAYS = 14 // grace for the regulars (currently same as everyone)
 export const RATING_FLOOR = 800 // no rating ever drops below this (losses or decay)
 export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -120,7 +120,7 @@ function expectedScore(effA, effB) {
  *      "Team N" pattern, so auto-names don't pollute the rankings.
  *   3. Empty → anonymous (used for opponent strength only, no ELO update)
  */
-function resolvePlayers(team) {
+export function resolvePlayers(team) {
   if (Array.isArray(team.players) && team.players.length > 0) return team.players
   if (team.name && !/^Team \d+$/i.test(team.name.trim())) return [team.name.trim()]
   return []
@@ -146,9 +146,9 @@ export function computeEloChanges(teams, currentRatings) {
         ? players.map((name) => {
             const entry = currentRatings.get(name)
             return provisionalRating(
-            entry?.rating ?? initialRatingFor(name),
-            entry?.gamesPlayed ?? 0,
-          )
+              entry?.rating ?? initialRatingFor(name),
+              entry?.gamesPlayed ?? 0,
+            )
           })
         : [INITIAL_RATING]
     const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length

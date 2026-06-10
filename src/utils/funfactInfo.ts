@@ -73,7 +73,3 @@ export const FUNFACT_INFO: Record<string, string> = {
   // Personal fallback badge (player holds no league-wide title)
   personal: 'A personal highlight from this player’s own record.',
 }
-
-export function infoFor(key: string | undefined): string | undefined {
-  return key ? FUNFACT_INFO[key] : undefined
-}
