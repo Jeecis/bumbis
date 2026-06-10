@@ -66,6 +66,14 @@ export function resetRoom(id: string): Promise<Room> {
   return request(`/rooms/${id}/reset`, { method: 'POST' })
 }
 
+/**
+ * Predicted win probabilities for a split room's teams, aligned to team order
+ * and summing to 1 (empty until the room is split). Based on player ELO ratings.
+ */
+export function getRoomPrediction(id: string): Promise<{ probabilities: number[] }> {
+  return request(`/rooms/${id}/prediction`)
+}
+
 export interface TeamResult {
   name: string
   players: string[]
@@ -99,6 +107,8 @@ export interface PlayerRanking {
   rating: number
   games_played: number
   wins: number
+  /** Net rating change since the start of today (can be negative). */
+  today_change: number
 }
 
 export function getLeaderboard(): Promise<PlayerRanking[]> {
