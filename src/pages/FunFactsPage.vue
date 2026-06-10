@@ -243,7 +243,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div
               v-for="card in section.cards"
-              :key="card.title"
+              :key="card.key"
               class="relative bg-surface-container-low rounded-[2rem] p-6 shadow-[0_20px_40px_rgba(0,0,0,0.2)] flex flex-col gap-2"
             >
               <!-- Explanation (hover to peek, tap to pin) -->
