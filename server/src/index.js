@@ -27,6 +27,7 @@ import {
   wheelExists,
 } from './db.js'
 import { INITIAL_RATING, computeEloChanges } from './elo.js'
+import { computeFunFacts } from './funfacts.js'
 
 const PORT = Number(process.env.PORT) || 8787
 const MAX_NAME_LEN = 40
@@ -344,6 +345,16 @@ app.delete('/api/results/:id', (req, res) => {
 
 app.get('/api/elo', (_req, res) => {
   res.json(getLeaderboard())
+})
+
+app.get('/api/funfacts', (_req, res) => {
+  try {
+    const facts = computeFunFacts(getResultsForRecalculation(), getLeaderboard())
+    res.json(facts)
+  } catch (err) {
+    console.error('Fun facts computation failed:', err)
+    res.status(500).json({ error: 'Could not compute fun facts' })
+  }
 })
 
 // --- Housekeeping -------------------------------------------------------------

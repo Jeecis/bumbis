@@ -32,6 +32,12 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS | Results' },
   },
   {
+    path: '/facts',
+    name: 'FunFacts',
+    component: () => import('@/pages/FunFactsPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Fun Facts' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },

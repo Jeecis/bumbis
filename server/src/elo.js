@@ -53,8 +53,8 @@ export const WIN_BONUS = 1 // flat rating bonus added on top of the ELO delta fo
 // daily-changing leaderboard both reproduce the same decayed value from the
 // stored rating + last-played date, with no separate scheduled job to drift.
 export const DECAY_PER_DAY = 2 // rating points lost per inactive day
-export const DECAY_GRACE_DAYS = 7 // free inactive days before decay starts
-export const DEFAULT_BALLER_GRACE_DAYS = 3 // shorter grace for the regulars
+export const DECAY_GRACE_DAYS = 14 // free inactive days before decay starts
+export const DEFAULT_BALLER_GRACE_DAYS = 14 // shorter grace for the regulars
 export const RATING_FLOOR = 800 // no rating ever drops below this (losses or decay)
 export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -145,7 +145,10 @@ export function computeEloChanges(teams, currentRatings) {
       players.length > 0
         ? players.map((name) => {
             const entry = currentRatings.get(name)
-            return provisionalRating(entry?.rating ?? initialRatingFor(name), entry?.gamesPlayed ?? 0)
+            return provisionalRating(
+            entry?.rating ?? initialRatingFor(name),
+            entry?.gamesPlayed ?? 0,
+          )
           })
         : [INITIAL_RATING]
     const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
