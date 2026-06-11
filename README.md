@@ -64,10 +64,8 @@ Regular-roster players (default ballers) start at **1200**; everyone else starts
 For each game, every team's performance is evaluated against **every other team** in a pairwise fashion. Each player receives the average of those pairwise deltas scaled by their personal K-factor.
 
 ```
-Delta_player = K × average over opponents of (S − E)  + (won ? 1 : 0)
+delta_player = K × average over opponents of (mov × acf × (S − E))
 ```
-
-Winning the game adds a flat **+1** bonus on top of the computed delta (applied to every player on a team that finishes at the top score).
 
 **Expected score E** (logistic curve, 400-point scale):
 
@@ -75,29 +73,58 @@ Winning the game adds a flat **+1** bonus on top of the computed delta (applied 
 E_A = 1 / (1 + 10 ^ ((R_B_eff − R_A_eff) / 400))
 ```
 
-**Actual score S** (continuous, score-based — not binary win/loss):
+**Actual score S** — binary, not score-share:
 
 ```
-S_A = score_A / (score_A + score_B)
+S = 1    strict win  (team's score > opponent's score in the pairwise)
+S = 0.5  draw        (equal scores in the pairwise)
+S = 0    loss
 ```
 
-A 10-2 win produces S ≈ 0.83 (high reward). A 10-9 squeaker produces S ≈ 0.53 (small reward). Both teams scoring 0 is treated as a draw (S = 0.5).
+**Margin-of-victory multiplier** — scales the delta by how convincingly a team won:
+
+```
+mov = ln(|score_A − score_B| + 1) / ln(4)
+```
+
+Calibrated so a 3-goal margin produces mov = 1.0 (the neutral reference point).
+
+| Score | Margin | mov |
+|---|---|---|
+| 10-9 | 1 | ≈ 0.50 |
+| 10-7 | 3 | 1.00 |
+| 10-0 | 10 | ≈ 1.73 |
+
+**Autocorrelation damper** — prevents favourites from gaining outsized MoV bonuses:
+
+```
+eff_diff = clamp(winner_eff − loser_eff, −500, 500)
+acf      = 2.2 / (eff_diff × 0.001 + 2.2)
+```
+
+A favourite winning (positive eff_diff) gets acf < 1; an underdog winning gets acf > 1. Draws use mov = acf = 1 (plain Elo).
+
+### Strict-winner semantics
+
+`won` is set to `true` only for the team whose score is the **unique** maximum. If two or more teams tie for the top score, no team gets a win counted in their stats — but pairwise ELO still adjusts (S = 0.5 between the tied teams). All-zero-score results are rejected as invalid (400 from the API; silently skipped during legacy ELO replay).
 
 ### Team size adjustment
 
-Effective team rating accounts for the collective advantage of fielding more players:
+Effective team rating uses an additive handicap computed per pairwise comparison:
 
 ```
-R_eff = average_rating × √(team_size)
+R_eff = avg_rating + SIZE_HANDICAP × (team_size − opponent_size)
 ```
 
-| Scenario | Solo (1200) R_eff | Duo (avg 1200) R_eff | Solo win probability |
+`SIZE_HANDICAP = 150`. Sizes are relative to the specific opponent, so the handicap updates for each pairing in a multi-team game.
+
+| Scenario | Solo pairEff | Duo pairEff | Solo win probability |
 |---|---|---|---|
-| 1v2, equal ratings | 1200 | 1697 | ~5 % |
-| 1v2, solo is 200 pts stronger | 1400 | 1697 | ~17 % |
-| 2v2 | 1697 | 1697 | 50 % |
+| 1v2, equal ratings (1200) | 1050 | 1350 | ≈ 15 % |
+| 1v2, solo is 200 pts stronger | 1250 | 1350 | ≈ 36 % |
+| 2v2, equal ratings | 1200 | 1200 | 50 % |
 
-A solo player who beats a duo earns a huge rating gain. Losing costs very little.
+A solo player who beats a duo earns a large rating gain (high MoV + underdog acf > 1). Losing costs very little (low expected E for the solo).
 
 ### K-factor progression
 
@@ -107,7 +134,7 @@ A solo player who beats a duo earns a huge rating gain. Losing costs very little
 | 10 – 29 | 90 |
 | 30 + | 60 |
 
-Infrequent players retain a higher K longer, so each rare win moves their rating faster — rewarding consistent performance regardless of activity level.
+New players have high K so initial placements settle quickly. No provisional rating penalty is applied — the K schedule alone handles new-player uncertainty.
 
 ### Handling the "best player with worst player" case
 
@@ -115,10 +142,10 @@ When a high-rated player (e.g. 1600) is paired with a low-rated player (e.g. 600
 
 ### Inactivity decay
 
-Players lose rating for every day they don't play. After a grace period, each subsequent inactive day costs **2 points**, down to the **800** floor (never below). The grace is **3 days for the regular roster** (default ballers) and **7 days for everyone else** — regulars are expected to show up, so their rating slips sooner.
+Players lose rating for every day they don't play. After a grace period, each subsequent inactive day costs **2 points**, down to the **800** floor (never below). The grace is **7 days for all players** (default ballers and newcomers alike).
 
 ```
-grace        = default baller ? 3 : 7
+grace        = 7
 decay        = max(0, days_since_last_game − grace) × 2
 shown_rating = max(800, rating_after_last_game − decay)
 ```
@@ -137,8 +164,8 @@ Each team is compared pairwise against every other team. The per-player delta is
 | New non-default player | Starts at 1000, K = 120 |
 | Team with no named players | Skipped — no ELO update for that team |
 | Fewer than 2 teams with players | Entire game skipped for ELO |
-| 1v2 (asymmetric team size) | Size penalised via √(team_size) effective rating |
-| All scores tied at 0 | Treated as a mutual draw (S = 0.5 for all) |
-| Tied winners (e.g. 7-7) | Both teams receive positive delta if they beat the expected value |
+| 1v2 (asymmetric team size) | Size penalised via additive handicap (SIZE_HANDICAP = 150) |
+| All scores are 0 | Rejected with 400 (API); silently skipped during legacy ELO replay |
+| Tied winners (e.g. 7-7) | No win counted; S = 0.5 pairwise, plain Elo applies |
 | Server restart with existing results | ELO is bootstrapped by replaying all results in chronological order |
-| Inactive player | Loses 2 pts/day after grace (3 days for default ballers, 7 otherwise), floored at 800; computed from `last_played_at`, not stored |
+| Inactive player | Loses 2 pts/day after 7-day grace, floored at 800; computed from `last_played_at`, not stored |

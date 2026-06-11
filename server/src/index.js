@@ -33,6 +33,7 @@ import {
   graceDaysFor,
   initialRatingFor,
   predictWinProbabilities,
+  resolvePlayers,
 } from './elo.js'
 import { computeFunFacts } from './funfacts.js'
 
@@ -332,6 +333,9 @@ app.post('/api/results', (req, res) => {
       return res.status(400).json({ error: 'Each team must have a valid score' })
     }
   }
+  if (teams.every((t) => t.score === 0)) {
+    return res.status(400).json({ error: 'All-zero scores are not a valid result' })
+  }
   const maxScore = Math.max(...teams.map((t) => t.score))
   const topTeams = teams.filter((t) => t.score === maxScore)
   const winnerName = topTeams
@@ -415,6 +419,30 @@ function ratingsAsOf(cutoff) {
 }
 
 /**
+ * Aggregate goals scored (for) and conceded (against) per named player across
+ * all stored results. In multi-team games goals_against is the sum of all
+ * opposing teams' scores, not just the highest-scoring opponent.
+ */
+function computeGoalStats() {
+  const stats = new Map()
+  for (const { teams } of getResultsForRecalculation()) {
+    const totalScore = teams.reduce((sum, t) => sum + t.score, 0)
+    for (const team of teams) {
+      const players = resolvePlayers(team)
+      if (players.length === 0) continue
+      const goalsAgainst = totalScore - team.score
+      for (const name of players) {
+        const s = stats.get(name) ?? { goals_for: 0, goals_against: 0 }
+        s.goals_for += team.score
+        s.goals_against += goalsAgainst
+        stats.set(name, s)
+      }
+    }
+  }
+  return stats
+}
+
+/**
  * Current leaderboard plus each player's net rating change since local midnight.
  * The baseline is the player's rating as of the start of today (decay included);
  * players first seen today are compared against their initial rating.
@@ -422,14 +450,16 @@ function ratingsAsOf(cutoff) {
 function getLeaderboardWithDailyChange() {
   const startOfToday = startOfTodayMs()
   const baseline = ratingsAsOf(startOfToday)
+  const goalStats = computeGoalStats()
   return getLeaderboard().map((player) => {
     const prev = baseline.get(player.name)
+    const gs = goalStats.get(player.name) ?? { goals_for: 0, goals_against: 0 }
     if (!prev) {
-      return { ...player, today_change: player.rating - initialRatingFor(player.name) }
+      return { ...player, today_change: player.rating - initialRatingFor(player.name), ...gs }
     }
     const grace = graceDaysFor(player.name)
     const baseRating = Math.round(decayedRating(prev.rating, prev.lastPlayedAt, startOfToday, grace))
-    return { ...player, today_change: player.rating - baseRating }
+    return { ...player, today_change: player.rating - baseRating, ...gs }
   })
 }
 
