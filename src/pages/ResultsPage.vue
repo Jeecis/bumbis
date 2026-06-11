@@ -384,6 +384,10 @@
               >W%</span
             >
             <span
+              class="w-20 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              >GF:GA</span
+            >
+            <span
               class="w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >Today</span
             >
@@ -475,6 +479,10 @@
                 player.games_played > 0 ? Math.round((player.wins / player.games_played) * 100) : 0
               }}%
             </span>
+            <!-- Goals for : Goals against -->
+            <span class="w-20 text-right text-on-surface-variant font-bold text-xs tabular-nums">
+              {{ player.goals_for }}:{{ player.goals_against }}
+            </span>
             <!-- Today's gain/loss -->
             <span class="w-14 text-right">
               <span
@@ -493,7 +501,8 @@
           </div>
 
           <p class="text-xs text-on-surface-variant px-4 pt-2">
-            Starting ELO: 1200 · GP = games played · W% = win rate · Today = ELO gained/lost today
+            Starting ELO: 1200 · GP = games played · W% = win rate · GF:GA = goals scored:conceded ·
+            Today = ELO gained/lost today
           </p>
         </template>
       </div>

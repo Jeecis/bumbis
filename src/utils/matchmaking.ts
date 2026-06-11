@@ -109,6 +109,8 @@ export interface PlayerRanking {
   wins: number
   /** Net rating change since the start of today (can be negative). */
   today_change: number
+  goals_for: number
+  goals_against: number
 }
 
 export function getLeaderboard(): Promise<PlayerRanking[]> {

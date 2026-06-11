@@ -3,47 +3,50 @@ import { createRequire } from 'node:module'
 const _require = createRequire(import.meta.url)
 
 /**
- * Bumbis Score-Weighted Team ELO
+ * Bumbis Margin-of-Victory Team ELO (FiveThirtyEight-style)
  *
  * Key design decisions:
  *
- * 1. Score-based result (not binary win/loss)
- *    S_A = score_A / (score_A + score_B) per pairwise comparison.
- *    A 10-2 win counts far more than a 10-9 squeaker.
+ * 1. Binary result with margin-of-victory multiplier (MoV)
+ *    S = 1 (strict win), 0.5 (pairwise draw), or 0 (loss) per pairwise comparison.
+ *    Score gap feeds a MoV multiplier rather than the outcome S, keeping the
+ *    logistic expected-value formula clean.
  *
- * 2. Effective team rating accounts for team size
- *    R_eff = avg_rating * sqrt(team_size)
- *    A solo player facing a duo is a significant underdog even at equal ratings.
- *    Winning alone against two earns a large ELO boost; losing costs little.
+ *    mov = ln(|score_A − score_B| + 1) / ln(4)
+ *    Worked examples at equal ratings:
+ *      10-9  → mov ≈ 0.50   (narrow win)
+ *      10-7  → mov ≈ 1.00   (typical win, calibration point)
+ *      10-0  → mov ≈ 1.73   (blowout)
+ *
+ *    Autocorrelation damper prevents over-rewarding favourites:
+ *      acf = 2.2 / ((winner_eff − loser_eff) × 0.001 + 2.2)
+ *    eff diff clamped to [−500, 500]; draws use mov = acf = 1 (plain Elo).
+ *
+ * 2. Additive size handicap (replaces old √(team_size) model)
+ *    R_eff = avg_rating + SIZE_HANDICAP × (team_size − opponent_size)
+ *    Computed per pairwise comparison; equal-skill 1v2 yields E_solo ≈ 0.15.
+ *    Anonymous teams use INITIAL_RATING and size 1.
  *
  * 3. Multi-team games handled via pairwise averaging
- *    Each team is compared against every other team.
- *    Per-player delta = K * average(S - E over all opponents).
+ *    Each team compared against every other; per-player delta is the average of
+ *    K × mov × acf × (S − E) over all opponents.
  *
  * 4. Individual K-factor progression
  *    K=120 (< 10 games) → K=90 (10-29) → K=60 (30+)
- *    Infrequent but always-winning players keep high K longer, so their
- *    rating rises faster per game — rewarding consistent winners.
  *
- * 5. New / non-default players start at INITIAL_RATING (1200).
- *    Provisional penalty: players with fewer than PROVISIONAL_GAMES games have
- *    their effective rating reduced linearly toward (INITIAL_RATING - PROVISIONAL_PENALTY).
- *    This treats unknowns conservatively — their team's expected strength is lower,
- *    so a win counts more and a loss costs less for everyone on that team.
+ * 5. Starting ratings
+ *    Default ballers: INITIAL_RATING = 1200.  Everyone else: NON_BALLER_INITIAL_RATING = 1000.
+ *    No provisional penalty — new-player uncertainty is handled by the K schedule alone.
  *
- * 6. "Carry" is handled structurally, not by penalising individuals.
- *    A 1600-rated player paired with a 600-rated player has a lower team avg,
- *    making the team the underdog. A win gives everyone on that team more ELO;
- *    a loss costs everyone less. The disparity is priced into the expected value.
- *
- * 7. Anonymous teams (no resolvable players) still participate in expected-value
- *    calculation at INITIAL_RATING so that named opponents get meaningful ELO
- *    changes even when the opposing team has no tracked identity.
+ * 6. Strict-winner semantics
+ *    `won = true` only when one team's score is the unique maximum.
+ *    Tied-at-top results record no win for any team; all-zero-score games are
+ *    rejected (400 from the API; empty Map from computeEloChanges for legacy replay).
  */
 
 export const INITIAL_RATING = 1200 // starting rating for default ballers / unknown opponents
 export const NON_BALLER_INITIAL_RATING = 1000 // newcomers outside the regular roster start lower
-export const WIN_BONUS = 1 // flat rating bonus added on top of the ELO delta for winning a game
+export const SIZE_HANDICAP = 150 // additive eff-rating bonus per extra teammate vs the specific opponent
 
 // --- Inactivity decay ---------------------------------------------------------
 // Players lose rating for every full day they don't play, once a grace period
@@ -86,17 +89,6 @@ export function decayedRating(rating, lastPlayedAt, asOf, graceDays = DECAY_GRAC
   return Math.max(DECAY_FLOOR, rating - decayDays * DECAY_PER_DAY)
 }
 
-// New players are assumed to be below average until they've played enough games.
-// Their effective rating for team-strength calculation is penalised by up to
-// PROVISIONAL_PENALTY points, shrinking linearly to zero by PROVISIONAL_GAMES.
-const PROVISIONAL_GAMES = 10
-const PROVISIONAL_PENALTY = 200
-
-function provisionalRating(rating, gamesPlayed) {
-  if (gamesPlayed >= PROVISIONAL_GAMES) return rating
-  return rating - PROVISIONAL_PENALTY * (1 - gamesPlayed / PROVISIONAL_GAMES)
-}
-
 export function kFactor(gamesPlayed) {
   if (gamesPlayed < 10) return 120
   if (gamesPlayed < 30) return 90
@@ -127,21 +119,13 @@ export function resolvePlayers(team) {
 }
 
 /**
- * Size-adjusted effective rating for a resolved lineup. Newcomers get the
- * provisional penalty; an empty lineup is treated as a single INITIAL_RATING
- * player (anonymous opponent strength).
+ * Average rating of a resolved lineup. Anonymous teams (empty players) return
+ * INITIAL_RATING as a placeholder for opponent strength.
  */
-function effectiveRating(players, currentRatings) {
-  const ratings =
-    players.length > 0
-      ? players.map((name) => {
-          const entry = currentRatings.get(name)
-          return provisionalRating(entry?.rating ?? initialRatingFor(name), entry?.gamesPlayed ?? 0)
-        })
-      : [INITIAL_RATING]
-  const avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length
-  const size = Math.max(1, players.length)
-  return avgRating * Math.sqrt(size)
+function teamAvgRating(players, currentRatings) {
+  if (players.length === 0) return INITIAL_RATING
+  const ratings = players.map((name) => currentRatings.get(name)?.rating ?? initialRatingFor(name))
+  return ratings.reduce((a, b) => a + b, 0) / ratings.length
 }
 
 /**
@@ -151,11 +135,25 @@ function effectiveRating(players, currentRatings) {
  * 10), so the two-team case matches expectedScore exactly. `teams` may be plain
  * lineups (string[][]) or team objects; returns probabilities aligned to the
  * input order, summing to 1.
+ *
+ * For each team i: eff_i = avg_rating_i + SIZE_HANDICAP × (size_i − mean_other_size_i)
+ * This reduces to the pairwise formula for 2 teams, satisfying the two-team identity.
  */
 export function predictWinProbabilities(teams, currentRatings) {
   if (!Array.isArray(teams) || teams.length === 0) return []
   const lineups = teams.map((t) => (Array.isArray(t) ? t : resolvePlayers(t)))
-  const weights = lineups.map((players) => Math.pow(10, effectiveRating(players, currentRatings) / 400))
+  const sizes = lineups.map((p) => Math.max(1, p.length)) // anonymous teams count as size 1
+  const n = lineups.length
+  const totalSize = sizes.reduce((a, b) => a + b, 0)
+
+  const weights = lineups.map((players, i) => {
+    const avgRating = teamAvgRating(players, currentRatings)
+    const size = sizes[i]
+    const meanOtherSize = (totalSize - size) / (n - 1)
+    const eff = avgRating + SIZE_HANDICAP * (size - meanOtherSize)
+    return Math.pow(10, eff / 400)
+  })
+
   const total = weights.reduce((a, b) => a + b, 0)
   if (total === 0) return weights.map(() => 1 / weights.length)
   return weights.map((w) => w / total)
@@ -170,17 +168,23 @@ export function predictWinProbabilities(teams, currentRatings) {
  */
 export function computeEloChanges(teams, currentRatings) {
   if (!Array.isArray(teams) || teams.length < 2) return new Map()
+  // All-zero results are not valid — skip silently during legacy replay.
+  if (teams.every((t) => t.score === 0)) return new Map()
 
-  const maxScore = Math.max(...teams.map((t) => t.score))
+  const scores = teams.map((t) => t.score)
+  const maxScore = Math.max(...scores)
+  const maxCount = scores.filter((s) => s === maxScore).length
 
   const enriched = teams.map((team) => {
     const players = resolvePlayers(team)
-    // Anonymous teams fall back to INITIAL_RATING as a placeholder for opponent strength.
     return {
       players,
       score: team.score,
-      effRating: effectiveRating(players, currentRatings),
-      won: team.score === maxScore,
+      // Anonymous teams are treated as size 1 for handicap purposes.
+      size: players.length > 0 ? players.length : 1,
+      avgRating: teamAvgRating(players, currentRatings),
+      // won is true only for the unique top scorer.
+      won: team.score === maxScore && maxCount === 1,
       anonymous: players.length === 0,
     }
   })
@@ -199,17 +203,41 @@ export function computeEloChanges(teams, currentRatings) {
     for (let j = 0; j < n; j++) {
       if (i === j) continue
       const teamB = enriched[j]
-      const E = expectedScore(teamA.effRating, teamB.effRating)
-      const total = teamA.score + teamB.score
-      const S = total > 0 ? teamA.score / total : 0.5
-      pairwiseSum += S - E
+
+      // Pairwise effective ratings — handicap is relative to this specific opponent.
+      const pairEffA = teamA.avgRating + SIZE_HANDICAP * (teamA.size - teamB.size)
+      const pairEffB = teamB.avgRating + SIZE_HANDICAP * (teamB.size - teamA.size)
+
+      const E = expectedScore(pairEffA, pairEffB)
+
+      // Binary S: strict win = 1, pairwise draw = 0.5, loss = 0.
+      const S = teamA.score > teamB.score ? 1 : teamA.score === teamB.score ? 0.5 : 0
+
+      let mov, acf
+      if (S === 0.5) {
+        // Draws use plain Elo — no MoV or autocorrelation adjustment.
+        mov = 1
+        acf = 1
+      } else {
+        const margin = Math.abs(teamA.score - teamB.score)
+        mov = Math.log(margin + 1) / Math.log(4)
+
+        const winnerEff = teamA.score > teamB.score ? pairEffA : pairEffB
+        const loserEff = teamA.score > teamB.score ? pairEffB : pairEffA
+        // Positive eff_diff → favourite won → acf < 1; negative → underdog won → acf > 1.
+        const effDiff = Math.max(-500, Math.min(500, winnerEff - loserEff))
+        acf = 2.2 / (effDiff * 0.001 + 2.2)
+      }
+
+      pairwiseSum += mov * acf * (S - E)
     }
+
     const pairwiseDelta = pairwiseSum / (n - 1)
 
     for (const name of teamA.players) {
       const gp = currentRatings.get(name)?.gamesPlayed ?? 0
       changes.set(name, {
-        delta: kFactor(gp) * pairwiseDelta + (teamA.won ? WIN_BONUS : 0),
+        delta: kFactor(gp) * pairwiseDelta,
         oldRating: currentRatings.get(name)?.rating ?? initialRatingFor(name),
         won: teamA.won,
         gamesPlayed: gp,

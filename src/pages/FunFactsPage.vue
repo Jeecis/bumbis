@@ -329,7 +329,7 @@ onMounted(async () => {
 })
 
 const spotlight = computed<PlayerFacts | null>(() =>
-  facts.value && selectedPlayer.value ? (facts.value.byPlayer[selectedPlayer.value] ?? null) : null,
+  facts.value && selectedPlayer.value ? facts.value.byPlayer[selectedPlayer.value] ?? null : null,
 )
 
 // --- Formatting helpers -------------------------------------------------------
