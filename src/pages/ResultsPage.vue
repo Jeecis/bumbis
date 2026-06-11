@@ -501,8 +501,8 @@
           </div>
 
           <p class="text-xs text-on-surface-variant px-4 pt-2">
-            Starting ELO: 1200 · GP = games played · W% = win rate · GF:GA = goals scored:conceded
-            · Today = ELO gained/lost today
+            Starting ELO: 1200 · GP = games played · W% = win rate · GF:GA = goals scored:conceded ·
+            Today = ELO gained/lost today
           </p>
         </template>
       </div>
