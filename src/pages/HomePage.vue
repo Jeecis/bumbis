@@ -10,7 +10,7 @@
       </div>
     </header>
 
-    <main class="flex-grow container mx-auto px-6 py-12 max-w-4xl pb-40">
+    <main class="flex-grow container mx-auto px-4 sm:px-6 py-12 max-w-4xl pb-40">
       <div class="flex flex-wrap justify-center gap-3 mb-8">
         <RouterLink
           to="/facts"
@@ -35,6 +35,12 @@
           class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
         >
           Spin the wheel
+        </RouterLink>
+        <RouterLink
+          to="/gamble"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          Gamble ELO
         </RouterLink>
         <button
           type="button"

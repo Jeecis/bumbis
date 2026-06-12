@@ -72,6 +72,20 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_wheel_players_wheel ON wheel_players(wheel_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS gambles (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    wager         INTEGER NOT NULL,
+    outcome       TEXT NOT NULL,            -- 'win' | 'lose'
+    delta         INTEGER NOT NULL,         -- signed net ELO change (+wager win, -wager loss)
+    rating_before INTEGER NOT NULL,
+    rating_after  INTEGER NOT NULL,
+    created_at    INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_gambles_created ON gambles(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_gambles_name ON gambles(name);
 `)
 
 // Migration: add the shared palette flag to wheels created before it existed.
@@ -152,6 +166,22 @@ const upsertPlayerEloStmt = db.prepare(`
     updated_at     = excluded.updated_at
 `)
 const resetAllEloStmt = db.prepare(`DELETE FROM player_elo`)
+
+// --- Gambling statements ------------------------------------------------------
+const insertGambleStmt = db.prepare(
+  `INSERT INTO gambles (id, name, wager, outcome, delta, rating_before, rating_after, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+)
+const getGambleHistoryStmt = db.prepare(
+  `SELECT id, name, wager, outcome, delta, rating_before, rating_after, created_at
+   FROM gambles ORDER BY created_at DESC LIMIT ?`,
+)
+// Net (signed) gamble delta per player since a given instant. Used to fold
+// gambling winnings/losses into the displayed ELO without disturbing the
+// game-result ELO maths (which is rebuilt from scratch on startup).
+const getGambleNetStmt = db.prepare(
+  `SELECT name, COALESCE(SUM(delta), 0) AS net FROM gambles WHERE created_at >= ? GROUP BY name`,
+)
 
 const insertResultStmt = db.prepare(
   `INSERT INTO game_results (id, date, teams_json, winner, source, created_at)
@@ -265,18 +295,67 @@ export function getPlayerRatingsMap(asOf = Date.now()) {
 }
 
 export function getLeaderboard(asOf = Date.now()) {
+  const gambleNet = getGambleNetMap()
   return (
     getAllPlayerEloStmt
       .all()
-      .map((r) => ({
-        name: r.name,
-        rating: Math.round(decayedRating(r.rating, r.last_played_at, asOf, graceDaysFor(r.name))),
-        games_played: r.games_played,
-        wins: r.wins,
-      }))
-      // Decay can reorder players relative to the stored-rating ordering.
+      .map((r) => {
+        const base = decayedRating(r.rating, r.last_played_at, asOf, graceDaysFor(r.name))
+        // Gambling winnings/losses ride on top of the game-result rating, floored
+        // so a losing streak can never drop a player below the rating floor.
+        const rating = Math.max(RATING_FLOOR, base + (gambleNet.get(r.name) ?? 0))
+        return {
+          name: r.name,
+          rating: Math.round(rating),
+          games_played: r.games_played,
+          wins: r.wins,
+        }
+      })
+      // Decay and gambling can reorder players relative to the stored ordering.
       .sort((a, b) => b.rating - a.rating)
   )
+}
+
+/** Signed net gamble delta per player since `since` (epoch ms; default all-time). */
+export function getGambleNetMap(since = 0) {
+  const map = new Map()
+  for (const row of getGambleNetStmt.all(since)) map.set(row.name, row.net)
+  return map
+}
+
+/**
+ * The player's current gambling state: their game-result rating (decayed to now)
+ * plus all-time gamble net, floored. Returns null if the player has no ranked
+ * row yet (they must have played a game before they can gamble).
+ */
+export function getPlayerGambleRating(name, asOf = Date.now()) {
+  const row = getPlayerEloStmt.get(name)
+  if (!row) return null
+  const base = decayedRating(row.rating, row.last_played_at, asOf, graceDaysFor(name))
+  const net = getGambleNetMap().get(name) ?? 0
+  return Math.round(Math.max(RATING_FLOOR, base + net))
+}
+
+/** Persist a single gamble. Returns the stored row with a generated id. */
+export function recordGamble({ name, wager, outcome, delta, ratingBefore, ratingAfter }) {
+  const now = Date.now()
+  const id = genId(10)
+  insertGambleStmt.run(id, name, wager, outcome, delta, ratingBefore, ratingAfter, now)
+  return { id, name, wager, outcome, delta, ratingBefore, ratingAfter, createdAt: now }
+}
+
+/** Most recent gambles, newest first. */
+export function getGambleHistory(limit = 100) {
+  return getGambleHistoryStmt.all(limit).map((row) => ({
+    id: row.id,
+    name: row.name,
+    wager: row.wager,
+    outcome: row.outcome,
+    delta: row.delta,
+    ratingBefore: row.rating_before,
+    ratingAfter: row.rating_after,
+    createdAt: row.created_at,
+  }))
 }
 
 /**

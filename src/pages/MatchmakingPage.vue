@@ -9,7 +9,7 @@
       </div>
     </header>
 
-    <main class="flex-grow container mx-auto px-6 py-8 max-w-3xl pb-28">
+    <main class="flex-grow container mx-auto px-4 sm:px-6 py-8 max-w-3xl pb-28">
       <div class="flex flex-wrap items-center justify-between gap-4 mb-8 px-2">
         <div>
           <p class="text-on-surface-variant uppercase font-black tracking-widest text-sm">

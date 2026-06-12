@@ -9,7 +9,7 @@
       </div>
     </header>
 
-    <main class="flex-grow container mx-auto px-6 py-4 max-w-3xl pb-28">
+    <main class="flex-grow container mx-auto px-4 sm:px-6 py-4 max-w-3xl pb-28">
       <!-- Page header -->
       <div class="flex flex-wrap items-center justify-between gap-4 mb-8 px-2">
         <div>
@@ -362,9 +362,9 @@
         </div>
         <template v-else>
           <!-- Header row -->
-          <div class="flex items-center gap-4 px-4 pb-1">
+          <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 pb-1">
             <span
-              class="w-8 text-center text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="w-6 sm:w-8 text-center text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >#</span
             >
             <span
@@ -372,23 +372,23 @@
               >Player</span
             >
             <span
-              class="w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="w-12 sm:w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >ELO</span
             >
             <span
-              class="w-10 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="hidden sm:block w-10 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >GP</span
             >
             <span
-              class="w-12 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="w-10 sm:w-12 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >W%</span
             >
             <span
-              class="w-20 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="hidden sm:block w-20 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >GF:GA</span
             >
             <span
-              class="w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
+              class="w-12 sm:w-14 text-right text-on-surface-variant uppercase font-black tracking-widest text-xs"
               >Today</span
             >
           </div>
@@ -404,11 +404,11 @@
                   : idx === 2
                     ? 'bg-amber-700/10 ring-1 ring-amber-700/20'
                     : 'bg-surface-container-low',
-              'rounded-2xl px-4 py-3 flex items-center gap-4 shadow-sm transition-all',
+              'rounded-2xl px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-4 shadow-sm transition-all',
             ]"
           >
             <!-- Rank -->
-            <div class="w-8 text-center">
+            <div class="w-6 sm:w-8 text-center">
               <span
                 v-if="idx === 0"
                 class="material-symbols-outlined text-yellow-400 text-xl"
@@ -464,27 +464,30 @@
                   : player.rating < 1200
                     ? 'text-secondary'
                     : 'text-on-surface',
-                'w-14 text-right font-black text-lg',
+                'w-12 sm:w-14 text-right font-black text-lg',
               ]"
               style="font-family: 'Plus Jakarta Sans', sans-serif"
               >{{ player.rating }}</span
             >
             <!-- Games played -->
-            <span class="w-10 text-right text-on-surface-variant font-bold text-sm">{{
-              player.games_played
-            }}</span>
+            <span
+              class="hidden sm:block w-10 text-right text-on-surface-variant font-bold text-sm"
+              >{{ player.games_played }}</span
+            >
             <!-- Win % -->
-            <span class="w-12 text-right font-extrabold text-sm">
+            <span class="w-10 sm:w-12 text-right font-extrabold text-sm">
               {{
                 player.games_played > 0 ? Math.round((player.wins / player.games_played) * 100) : 0
               }}%
             </span>
             <!-- Goals for : Goals against -->
-            <span class="w-20 text-right text-on-surface-variant font-bold text-xs tabular-nums">
+            <span
+              class="hidden sm:block w-20 text-right text-on-surface-variant font-bold text-xs tabular-nums"
+            >
               {{ player.goals_for }}:{{ player.goals_against }}
             </span>
             <!-- Today's gain/loss -->
-            <span class="w-14 text-right">
+            <span class="w-12 sm:w-14 text-right">
               <span
                 v-if="player.today_change !== 0"
                 class="inline-flex items-center justify-end gap-0.5 font-extrabold text-sm"

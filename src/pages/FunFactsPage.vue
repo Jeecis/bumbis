@@ -9,7 +9,10 @@
       </div>
     </header>
 
-    <main class="flex-grow container mx-auto px-6 py-4 max-w-5xl pb-28" @click="openInfo = null">
+    <main
+      class="flex-grow container mx-auto px-4 sm:px-6 py-4 max-w-5xl pb-28"
+      @click="openInfo = null"
+    >
       <!-- Page header -->
       <div class="flex flex-wrap items-center justify-between gap-4 mb-8 px-2">
         <div>

@@ -38,6 +38,12 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS | Fun Facts' },
   },
   {
+    path: '/gamble',
+    name: 'Gamble',
+    component: () => import('@/pages/GamblePage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Gamble' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },
