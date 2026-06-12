@@ -81,6 +81,14 @@ try {
   // Column already exists.
 }
 
+// Migration: remember which celebration animation a spin should play, so every
+// client renders the same one when the winner is revealed.
+try {
+  db.exec(`ALTER TABLE wheels ADD COLUMN celebration TEXT`)
+} catch {
+  // Column already exists.
+}
+
 // Migration: track when each player last played, for inactivity decay.
 try {
   db.exec(`ALTER TABLE player_elo ADD COLUMN last_played_at INTEGER`)
@@ -176,7 +184,7 @@ const deleteWheelPlayerByNameStmt = db.prepare(
 )
 const setWheelSpinningStmt = db.prepare(
   `UPDATE wheels SET status = 'spinning', rotation = ?, winner_name = ?, winner_index = ?,
-   spin_id = ?, spin_started_at = ?, updated_at = ? WHERE id = ?`,
+   spin_id = ?, spin_started_at = ?, celebration = ?, updated_at = ? WHERE id = ?`,
 )
 const setWheelIdleStmt = db.prepare(
   `UPDATE wheels SET status = 'idle', spin_id = NULL, spin_started_at = NULL, updated_at = ?
@@ -381,6 +389,7 @@ export function getWheelState(wheelId) {
             winnerName: wheel.winner_name,
             winnerIndex: wheel.winner_index,
             startedAt: wheel.spin_started_at,
+            celebration: wheel.celebration,
           }
         : null,
     players: getWheelPlayersStmt.all(wheelId),
@@ -402,8 +411,20 @@ export function removeWheelPlayer(wheelId, playerId) {
   return info.changes > 0
 }
 
-export function setWheelSpinning(wheelId, { rotation, winnerName, winnerIndex, spinId, startedAt }) {
-  setWheelSpinningStmt.run(rotation, winnerName, winnerIndex, spinId, startedAt, startedAt, wheelId)
+export function setWheelSpinning(
+  wheelId,
+  { rotation, winnerName, winnerIndex, spinId, startedAt, celebration },
+) {
+  setWheelSpinningStmt.run(
+    rotation,
+    winnerName,
+    winnerIndex,
+    spinId,
+    startedAt,
+    celebration,
+    startedAt,
+    wheelId,
+  )
 }
 
 /** Remove the chosen player and return the wheel to idle. */

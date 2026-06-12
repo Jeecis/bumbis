@@ -275,6 +275,7 @@
     </main>
 
     <teleport to="body">
+      <WinnerCelebration v-if="showWinnerModal" :variant="celebrationVariant" />
       <transition name="modal-fade">
         <div
           v-if="showWinnerModal"
@@ -282,7 +283,7 @@
           @click.self="closeWinnerModal"
         >
           <div
-            class="w-full max-w-md rounded-[2rem] bg-surface-container p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] border border-white/10"
+            class="winner-card w-full max-w-md rounded-[2rem] bg-surface-container p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] border border-white/10"
             role="dialog"
             aria-modal="true"
             aria-labelledby="wheel-winner-title"
@@ -292,7 +293,7 @@
             </p>
             <h3
               id="wheel-winner-title"
-              class="text-4xl font-black tracking-tight text-primary mb-6 break-words"
+              class="winner-name text-4xl font-black tracking-tight text-primary mb-6 break-words"
             >
               {{ selectedName }}
             </h3>
@@ -318,6 +319,7 @@
 </template>
 
 <script setup lang="ts">
+import WinnerCelebration, { type CelebrationVariant } from '@/components/WinnerCelebration.vue'
 import { wheelSpinners } from '@/utils/defaultBallers'
 import {
   createWheel,
@@ -349,6 +351,9 @@ const errorMsg = ref('')
 
 const selectedName = ref('')
 const showWinnerModal = ref(false)
+// The winning animation the server chose for the current spin, so every client
+// reveals the same one. Falls back to confetti for spins that predate the field.
+const celebrationVariant = ref<CelebrationVariant>('confetti')
 const isSpinning = ref(false)
 const rotation = ref(0)
 const spinDuration = ref(0)
@@ -481,6 +486,8 @@ function handleSpinState(next: WheelState) {
       rotation.value = next.rotation
     } else {
       // A fresh spin seen live: animate to the target, then reveal the winner.
+      // Use the server's celebration so every client plays the same animation.
+      celebrationVariant.value = next.spin.celebration ?? 'confetti'
       spinDuration.value = SPIN_DURATION_MS
       rotation.value = next.rotation
       scheduleWinnerReveal(next.spin.winnerName)
@@ -660,5 +667,36 @@ svg text {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.winner-card {
+  animation: winner-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes winner-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.winner-name {
+  animation: winner-bounce 1.4s ease-in-out infinite;
+}
+
+@keyframes winner-bounce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
 }
 </style>
