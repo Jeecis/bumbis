@@ -174,7 +174,7 @@
               Current Roster
             </h2>
             <div v-if="roster.length === 0" class="px-4 text-outline-variant text-lg font-medium">
-              No players yet. Add some names above!
+              No players yet. Add some!
             </div>
             <div v-else class="flex flex-wrap gap-4">
               <div
