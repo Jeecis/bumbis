@@ -1,6 +1,8 @@
 // Client for the shared "spin the wheel" API (server/). Mirrors matchmaking.ts:
 // in dev Vite proxies `/api` to the Node service; in production nginx does.
 
+import type { CelebrationVariant } from '@/components/WinnerCelebration.vue'
+
 export interface WheelPlayer {
   id: string
   name: string
@@ -13,6 +15,9 @@ export interface SpinInfo {
   winnerName: string
   winnerIndex: number
   startedAt: number
+  // Server-chosen so every client reveals the same winner animation. May be
+  // absent on spins started before this field existed.
+  celebration: CelebrationVariant | null
 }
 
 export interface WheelState {

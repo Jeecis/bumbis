@@ -45,6 +45,22 @@ const ROOM_TTL_MS = 24 * 60 * 60 * 1000 // rooms expire 24h after the last chang
 const SPIN_DURATION_MS = 3000 // must match the wheel's CSS transition on the client
 const SPIN_GRACE_MS = 400 // small buffer before the server removes the winner
 
+// Celebration animations the winner modal can play. The server picks one per
+// spin so every connected client shows the exact same animation (kept in sync
+// with CelebrationVariant in src/components/WinnerCelebration.vue).
+const CELEBRATION_VARIANTS = [
+  'confetti',
+  'fireworks',
+  'emoji-rain',
+  'balloons',
+  'sparkles',
+  'bouncing-balls',
+  'streamers',
+  'bubbles',
+  'shockwave',
+  'laser-show',
+]
+
 const app = express()
 app.use(express.json({ limit: '16kb' }))
 
@@ -297,8 +313,10 @@ app.post('/api/wheels/:id/spin', (req, res) => {
   const rotation = state.rotation + 360 * 6 + targetWithinTurn
   const startedAt = Date.now()
   const spinId = `${id}-${startedAt}`
+  // Pick the celebration here so every client reveals the same animation.
+  const celebration = CELEBRATION_VARIANTS[Math.floor(Math.random() * CELEBRATION_VARIANTS.length)]
 
-  setWheelSpinning(id, { rotation, winnerName, winnerIndex, spinId, startedAt })
+  setWheelSpinning(id, { rotation, winnerName, winnerIndex, spinId, startedAt, celebration })
   broadcastWheel(id)
 
   // After the animation, remove the winner and return to idle (server-side so it

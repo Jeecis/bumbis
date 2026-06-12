@@ -296,8 +296,8 @@ const lasers = computed(() => {
 
 @keyframes firework-burst {
   0% {
-    transform: translate(0, 0) scale(1);
     opacity: 1;
+    transform: translate(0, 0) scale(1);
   }
 
   70% {
@@ -305,8 +305,8 @@ const lasers = computed(() => {
   }
 
   100% {
-    transform: translate(var(--dx), var(--dy)) scale(0.3);
     opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.3);
   }
 }
 
@@ -332,12 +332,12 @@ const lasers = computed(() => {
 .balloon {
   position: absolute;
   bottom: -22vh;
-  aspect-ratio: 4 / 5;
-  border-radius: 50% 50% 50% 50% / 56% 56% 44% 44%;
   background: radial-gradient(circle at 32% 28%, rgb(255 255 255 / 55%), var(--balloon-color) 55%);
+  border-radius: 50% 50% 50% 50% / 56% 56% 44% 44%;
   animation-name: balloon-rise;
   animation-timing-function: ease-in;
   animation-iteration-count: infinite;
+  aspect-ratio: 4 / 5;
   will-change: transform;
 }
 
@@ -368,36 +368,36 @@ const lasers = computed(() => {
 
 .sparkle {
   position: absolute;
+  text-shadow: 0 0 12px currentcolor;
   transform: scale(0);
   animation-name: sparkle-twinkle;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
-  text-shadow: 0 0 12px currentcolor;
   will-change: transform, opacity;
 }
 
 @keyframes sparkle-twinkle {
   0%,
   100% {
-    transform: scale(0) rotate(0deg);
     opacity: 0;
+    transform: scale(0) rotate(0deg);
   }
 
   50% {
-    transform: scale(1) rotate(45deg);
     opacity: 1;
+    transform: scale(1) rotate(45deg);
   }
 }
 
 .ball {
   position: absolute;
   top: 0;
-  aspect-ratio: 1;
-  border-radius: 50%;
   background: radial-gradient(circle at 32% 28%, rgb(255 255 255 / 60%), var(--ball-color) 60%);
+  border-radius: 50%;
   box-shadow: 0 6px 16px rgb(0 0 0 / 35%);
   animation-name: ball-bounce;
   animation-iteration-count: infinite;
+  aspect-ratio: 1;
   will-change: transform;
 }
 
@@ -461,24 +461,24 @@ const lasers = computed(() => {
 .bubble {
   position: absolute;
   bottom: -12vh;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 2px solid rgb(255 255 255 / 45%);
   background: radial-gradient(
     circle at 30% 30%,
     rgb(255 255 255 / 50%),
     color-mix(in srgb, var(--bubble-tint) 30%, transparent) 65%
   );
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-radius: 50%;
   animation-name: bubble-rise;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+  aspect-ratio: 1;
   will-change: transform, opacity;
 }
 
 @keyframes bubble-rise {
   0% {
-    transform: translate3d(0, 0, 0) scale(0.9);
     opacity: 1;
+    transform: translate3d(0, 0, 0) scale(0.9);
   }
 
   25% {
@@ -490,13 +490,13 @@ const lasers = computed(() => {
   }
 
   75% {
-    transform: translate3d(var(--sway), -86vh, 0) scale(1.1);
     opacity: 1;
+    transform: translate3d(var(--sway), -86vh, 0) scale(1.1);
   }
 
   100% {
-    transform: translate3d(0, -115vh, 0) scale(1.2);
     opacity: 0;
+    transform: translate3d(0, -115vh, 0) scale(1.2);
   }
 }
 
@@ -510,8 +510,8 @@ const lasers = computed(() => {
   border-width: 4px;
   border-style: solid;
   border-radius: 50%;
-  transform: scale(0);
   box-shadow: 0 0 24px currentcolor;
+  transform: scale(0);
   animation-name: shockwave-expand;
   animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
   animation-iteration-count: infinite;
@@ -520,13 +520,13 @@ const lasers = computed(() => {
 
 @keyframes shockwave-expand {
   0% {
-    transform: scale(0);
     opacity: 1;
+    transform: scale(0);
   }
 
   100% {
-    transform: scale(9);
     opacity: 0;
+    transform: scale(9);
   }
 }
 
