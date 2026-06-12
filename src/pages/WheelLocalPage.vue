@@ -233,6 +233,7 @@
     </main>
 
     <teleport to="body">
+      <WinnerCelebration v-if="showWinnerModal" :variant="celebrationVariant" />
       <transition name="modal-fade">
         <div
           v-if="showWinnerModal"
@@ -240,7 +241,7 @@
           @click.self="closeWinnerModal"
         >
           <div
-            class="w-full max-w-md rounded-[2rem] bg-surface-container p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] border border-white/10"
+            class="winner-card w-full max-w-md rounded-[2rem] bg-surface-container p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] border border-white/10"
             role="dialog"
             aria-modal="true"
             aria-labelledby="wheel-winner-title"
@@ -250,7 +251,7 @@
             </p>
             <h3
               id="wheel-winner-title"
-              class="text-4xl font-black tracking-tight text-primary mb-6 break-words"
+              class="winner-name text-4xl font-black tracking-tight text-primary mb-6 break-words"
             >
               {{ selectedName }}
             </h3>
@@ -276,14 +277,31 @@
 </template>
 
 <script setup lang="ts">
+import WinnerCelebration, { type CelebrationVariant } from '@/components/WinnerCelebration.vue'
 import { wheelSpinners } from '@/utils/defaultBallers'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+
+const CELEBRATION_VARIANTS: CelebrationVariant[] = [
+  'confetti',
+  'fireworks',
+  'emoji-rain',
+  'balloons',
+  'sparkles',
+  'bouncing-balls',
+  'streamers',
+  'bubbles',
+  'shockwave',
+  'laser-show',
+]
 
 const wheelNames = ref<string[]>([])
 const newName = ref('')
 const selectedName = ref('')
 const showWinnerModal = ref(false)
+const celebrationVariant = ref<CelebrationVariant>(
+  CELEBRATION_VARIANTS[Math.floor(Math.random() * CELEBRATION_VARIANTS.length)],
+)
 const isSpinning = ref(false)
 const rotation = ref(0)
 const useDativaColors = ref(false)
@@ -437,9 +455,17 @@ function spinWheel() {
   spinTimeoutId = window.setTimeout(() => {
     selectedName.value = winnerName
     isSpinning.value = false
+    celebrationVariant.value = pickCelebrationVariant()
     showWinnerModal.value = true
     spinTimeoutId = null
   }, 3000)
+}
+
+function pickCelebrationVariant(): CelebrationVariant {
+  // Avoid showing the same celebration twice in a row so back-to-back
+  // spins always feel different.
+  const options = CELEBRATION_VARIANTS.filter((variant) => variant !== celebrationVariant.value)
+  return options[Math.floor(Math.random() * options.length)]
 }
 
 function closeWinnerModal() {
@@ -470,5 +496,36 @@ svg text {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+.winner-card {
+  animation: winner-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes winner-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.winner-name {
+  animation: winner-bounce 1.4s ease-in-out infinite;
+}
+
+@keyframes winner-bounce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
 }
 </style>
