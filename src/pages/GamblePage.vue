@@ -404,7 +404,7 @@ import { RouterLink } from 'vue-router'
 
 // Mirrors RATING_FLOOR on the server — the wager is capped so a loss can never
 // push a player below it. The server is authoritative; this is just for the UI.
-const RATING_FLOOR = 800
+const RATING_FLOOR = 0
 
 type Tab = 'play' | 'history'
 const tabs: { id: Tab; label: string }[] = [
