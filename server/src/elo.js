@@ -58,7 +58,7 @@ export const SIZE_HANDICAP = 150 // additive eff-rating bonus per extra teammate
 export const DECAY_PER_DAY = 2 // rating points lost per inactive day
 export const DECAY_GRACE_DAYS = 7 // free inactive days before decay starts
 export const DEFAULT_BALLER_GRACE_DAYS = 7 // grace for the regulars (currently same as everyone)
-export const RATING_FLOOR = 0 // no rating ever drops below this (losses, decay, or gambling)
+export const RATING_FLOOR = 800 // no rating ever drops below this (losses or decay)
 export const DECAY_FLOOR = RATING_FLOOR // decay bottoms out at the same floor
 const DAY_MS = 24 * 60 * 60 * 1000
 
