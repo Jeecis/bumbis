@@ -24,13 +24,9 @@ import {
   setVote,
   updateForumConfig,
   getAllResults,
-  getGambleHistory,
-  getGambleNetMap,
   getLeaderboard,
-  getPlayerGambleRating,
   getPlayerRatingsMap,
   getResultsForRecalculation,
-  recordGamble,
   getRoomState,
   getWheelState,
   pruneRooms,
@@ -662,51 +658,20 @@ app.get('/api/elo', (_req, res) => {
 })
 
 // --- Gambling -----------------------------------------------------------------
-// Players wager their ELO on a 50/50 double-or-nothing: win and the wager is
-// added to their rating, lose and it is taken away. The wager is capped so a
-// loss can never push a player below the rating floor. The server rolls the
-// outcome so it is authoritative (mirrors how the wheel chooses its winner).
-const GAMBLE_WIN_CHANCE = 0.5
+// ELO gambling is temporarily disabled. The feature and its stored history are
+// kept intact, but the endpoints respond with a maintenance object and no longer
+// touch ratings — gambling no longer folds into the leaderboard or daily change.
+const GAMBLE_MAINTENANCE = {
+  maintenance: true,
+  message: 'ELO gambling is temporarily under maintenance.',
+}
 
 app.get('/api/gamble/history', (_req, res) => {
-  res.json(getGambleHistory())
+  res.status(503).json(GAMBLE_MAINTENANCE)
 })
 
-app.post('/api/gamble', (req, res) => {
-  const name = normalizeName(req.body?.name)
-  if (!name) return res.status(400).json({ error: 'Player is required' })
-
-  const wager = Math.floor(Number(req.body?.wager))
-  if (!Number.isFinite(wager) || wager < 1) {
-    return res.status(400).json({ error: 'Wager must be a positive whole number' })
-  }
-
-  const ratingBefore = getPlayerGambleRating(name)
-  if (ratingBefore === null) {
-    return res.status(404).json({ error: 'Player has no ranking yet — play a game first' })
-  }
-
-  const maxWager = ratingBefore - RATING_FLOOR
-  if (maxWager < 1) {
-    return res.status(400).json({ error: 'Not enough ELO above the floor to gamble' })
-  }
-  if (wager > maxWager) {
-    return res.status(400).json({ error: `Wager too high — you can risk at most ${maxWager}` })
-  }
-
-  const won = Math.random() < GAMBLE_WIN_CHANCE
-  const delta = won ? wager : -wager
-  const ratingAfter = ratingBefore + delta
-  const entry = recordGamble({
-    name,
-    wager,
-    outcome: won ? 'win' : 'lose',
-    delta,
-    ratingBefore,
-    ratingAfter,
-  })
-
-  res.status(201).json(entry)
+app.post('/api/gamble', (_req, res) => {
+  res.status(503).json(GAMBLE_MAINTENANCE)
 })
 
 app.get('/api/funfacts', (_req, res) => {
@@ -792,19 +757,13 @@ function getLeaderboardWithDailyChange() {
   const startOfToday = startOfTodayMs()
   const baseline = ratingsAsOf(startOfToday)
   const goalStats = computeGoalStats()
-  // The leaderboard rating already folds in all-time gambling, so the midnight
-  // baseline must include gambling done before today to leave today_change with
-  // only today's swing (games + gambles).
-  const gambleNetAll = getGambleNetMap()
-  const gambleNetToday = getGambleNetMap(startOfToday)
   return getLeaderboard().map((player) => {
     const prev = baseline.get(player.name)
     const gs = goalStats.get(player.name) ?? { goals_for: 0, goals_against: 0 }
-    const netBeforeToday = (gambleNetAll.get(player.name) ?? 0) - (gambleNetToday.get(player.name) ?? 0)
     const baseMidnight = prev
       ? decayedRating(prev.rating, prev.lastPlayedAt, startOfToday, graceDaysFor(player.name))
       : initialRatingFor(player.name)
-    const effectiveMidnight = Math.round(Math.max(RATING_FLOOR, baseMidnight + netBeforeToday))
+    const effectiveMidnight = Math.round(Math.max(RATING_FLOOR, baseMidnight))
     return { ...player, today_change: player.rating - effectiveMidnight, ...gs }
   })
 }

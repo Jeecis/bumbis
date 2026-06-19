@@ -360,15 +360,14 @@ export function getPlayerRatingsMap(asOf = Date.now()) {
 }
 
 export function getLeaderboard(asOf = Date.now()) {
-  const gambleNet = getGambleNetMap()
   return (
     getAllPlayerEloStmt
       .all()
       .map((r) => {
-        const base = decayedRating(r.rating, r.last_played_at, asOf, graceDaysFor(r.name))
-        // Gambling winnings/losses ride on top of the game-result rating, floored
-        // so a losing streak can never drop a player below the rating floor.
-        const rating = Math.max(RATING_FLOOR, base + (gambleNet.get(r.name) ?? 0))
+        const rating = Math.max(
+          RATING_FLOOR,
+          decayedRating(r.rating, r.last_played_at, asOf, graceDaysFor(r.name)),
+        )
         return {
           name: r.name,
           rating: Math.round(rating),
@@ -376,7 +375,7 @@ export function getLeaderboard(asOf = Date.now()) {
           wins: r.wins,
         }
       })
-      // Decay and gambling can reorder players relative to the stored ordering.
+      // Decay can reorder players relative to the stored ordering.
       .sort((a, b) => b.rating - a.rating)
   )
 }
