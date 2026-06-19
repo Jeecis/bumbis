@@ -112,6 +112,7 @@ db.exec(`
     id         TEXT PRIMARY KEY,
     forum_id   TEXT NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
+    approved   INTEGER NOT NULL DEFAULT 1,  -- suggestions start at 0 until an admin approves
     created_at INTEGER NOT NULL,
     UNIQUE (forum_id, name)
   );
@@ -176,6 +177,11 @@ for (const col of ['dativa INTEGER NOT NULL DEFAULT 0', 'allow_suggestions INTEG
   } catch {
     // Column already exists.
   }
+}
+try {
+  db.exec(`ALTER TABLE forum_places ADD COLUMN approved INTEGER NOT NULL DEFAULT 1`)
+} catch {
+  // Column already exists.
 }
 
 // URL-safe id from a restricted alphabet (no ambiguous chars like 0/O/1/l/I).
@@ -625,17 +631,23 @@ const setForumDecidedStmt = db.prepare(
    WHERE id = ?`,
 )
 const getForumPlacesStmt = db.prepare(
-  `SELECT p.id, p.name, COUNT(v.voter_id) AS votes
+  `SELECT p.id, p.name, p.approved, COUNT(v.voter_id) AS votes
    FROM forum_places p LEFT JOIN forum_votes v ON v.place_id = p.id
-   WHERE p.forum_id = ? GROUP BY p.id, p.name ORDER BY p.created_at ASC`,
+   WHERE p.forum_id = ? GROUP BY p.id, p.name, p.approved ORDER BY p.created_at ASC`,
 )
 const insertForumPlaceStmt = db.prepare(
-  `INSERT OR IGNORE INTO forum_places (id, forum_id, name, created_at) VALUES (?, ?, ?, ?)`,
+  `INSERT OR IGNORE INTO forum_places (id, forum_id, name, approved, created_at) VALUES (?, ?, ?, ?, ?)`,
 )
 const getForumPlaceByNameStmt = db.prepare(
   `SELECT id, name FROM forum_places WHERE forum_id = ? AND name = ?`,
 )
-const getForumPlaceStmt = db.prepare(`SELECT id FROM forum_places WHERE forum_id = ? AND id = ?`)
+// Only approved places are votable — pending suggestions can't be voted for.
+const getForumPlaceStmt = db.prepare(
+  `SELECT id FROM forum_places WHERE forum_id = ? AND id = ? AND approved = 1`,
+)
+const approveForumPlaceStmt = db.prepare(
+  `UPDATE forum_places SET approved = 1 WHERE forum_id = ? AND id = ?`,
+)
 const deleteForumPlaceStmt = db.prepare(`DELETE FROM forum_places WHERE forum_id = ? AND id = ?`)
 const getForumVotersStmt = db.prepare(
   `SELECT id, name FROM forum_voters WHERE forum_id = ? ORDER BY created_at ASC`,
@@ -678,7 +690,7 @@ export function createForum({ selectionMode = 'single', wheelMode = 'weighted' }
     insertForumStmt.run(id, adminToken, selectionMode, wheelMode, now, now)
     // Stagger created_at so the default places keep their listed order (ORDER BY
     // created_at would otherwise tie and sort arbitrarily).
-    FORUM_DEFAULT_PLACES.forEach((name, i) => insertForumPlaceStmt.run(genId(10), id, name, now + i))
+    FORUM_DEFAULT_PLACES.forEach((name, i) => insertForumPlaceStmt.run(genId(10), id, name, 1, now + i))
     return { id, adminToken }
   }
   throw new Error('Could not allocate a unique forum id')
@@ -735,7 +747,7 @@ export function getForumState(forumId) {
             celebration: forum.celebration,
           }
         : null,
-    places: getForumPlacesStmt.all(forumId),
+    places: getForumPlacesStmt.all(forumId).map((p) => ({ ...p, approved: Boolean(p.approved) })),
     voters: getForumVotersStmt.all(forumId),
     messages: getForumMessagesStmt.all(forumId),
   }
@@ -756,11 +768,18 @@ export function removeVoter(forumId, voterId) {
   return info.changes > 0
 }
 
-export function addPlace(forumId, name) {
+// approved defaults to 1 (admin adds); pass 0 for a suggestion awaiting approval.
+export function addPlace(forumId, name, approved = 1) {
   const now = Date.now()
-  insertForumPlaceStmt.run(genId(10), forumId, name, now)
+  insertForumPlaceStmt.run(genId(10), forumId, name, approved ? 1 : 0, now)
   touchForumStmt.run(now, forumId)
   return getForumPlaceByNameStmt.get(forumId, name)
+}
+
+export function approvePlace(forumId, placeId) {
+  const info = approveForumPlaceStmt.run(forumId, placeId)
+  if (info.changes > 0) touchForumStmt.run(Date.now(), forumId)
+  return info.changes > 0
 }
 
 export function removePlace(forumId, placeId) {

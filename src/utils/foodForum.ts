@@ -11,6 +11,7 @@ export interface ForumPlace {
   id: string
   name: string
   votes: number
+  approved: boolean
 }
 
 export interface ForumVoter {
@@ -108,6 +109,10 @@ export function addPlace(id: string, name: string, adminToken?: string): Promise
     { method: 'POST', body: JSON.stringify({ name }) },
     adminToken,
   )
+}
+
+export function approvePlace(id: string, placeId: string, adminToken: string): Promise<ForumState> {
+  return request(`/forums/${id}/places/${placeId}/approve`, { method: 'POST' }, adminToken)
 }
 
 export function removePlace(id: string, placeId: string, adminToken: string): Promise<ForumState> {

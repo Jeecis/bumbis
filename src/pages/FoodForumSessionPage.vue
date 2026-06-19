@@ -105,7 +105,7 @@
                 </div>
                 <div class="text-right">
                   <p class="text-on-surface-variant uppercase tracking-widest text-xs">Places</p>
-                  <p class="text-3xl font-black text-primary">{{ places.length }}</p>
+                  <p class="text-3xl font-black text-primary">{{ approvedPlaces.length }}</p>
                 </div>
               </div>
 
@@ -282,7 +282,7 @@
 
               <div class="space-y-3">
                 <button
-                  v-for="place in places"
+                  v-for="place in approvedPlaces"
                   :key="place.id"
                   type="button"
                   class="w-full text-left rounded-2xl px-5 py-4 transition-colors relative overflow-hidden disabled:cursor-not-allowed"
@@ -331,6 +331,52 @@
                 </button>
               </div>
 
+              <!-- Pending suggestions awaiting admin approval -->
+              <div v-if="pendingPlaces.length > 0" class="mt-5">
+                <p
+                  class="text-xs font-extrabold uppercase tracking-wide text-on-surface-variant mb-2"
+                >
+                  {{ isAdmin ? 'Awaiting your approval' : 'Suggested — awaiting approval' }}
+                </p>
+                <div class="space-y-2">
+                  <div
+                    v-for="place in pendingPlaces"
+                    :key="place.id"
+                    class="flex items-center justify-between gap-3 rounded-2xl bg-surface-container-high/60 border border-dashed border-outline-variant px-5 py-3"
+                  >
+                    <span class="font-extrabold tracking-tight text-on-surface-variant truncate">
+                      {{ place.name }}
+                    </span>
+                    <span v-if="isAdmin" class="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        class="bg-primary/15 text-primary px-3 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wide hover:bg-primary/25 transition-colors disabled:opacity-50"
+                        :disabled="busy"
+                        @click="approvePlaceFn(place.id)"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        class="material-symbols-outlined text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
+                        title="Reject"
+                        :disabled="busy"
+                        @click="removePlaceFn(place.id)"
+                      >
+                        close
+                      </button>
+                    </span>
+                    <span
+                      v-else
+                      class="material-symbols-outlined text-base text-outline-variant shrink-0"
+                      title="Awaiting approval"
+                    >
+                      hourglass_empty
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <!-- Add a place: admins always, others when suggestions are open -->
               <form
                 v-if="isAdmin || state.allowSuggestions"
@@ -340,7 +386,7 @@
                 <input
                   v-model="newPlaceInput"
                   class="w-full bg-surface-container-high border-none rounded-full py-4 px-6 font-bold focus:ring-2 focus:ring-primary-dim transition-all outline-none placeholder:text-outline-variant text-on-surface"
-                  placeholder="Suggest a place"
+                  :placeholder="isAdmin ? 'Add a place' : 'Suggest a place'"
                   type="text"
                   maxlength="40"
                 />
@@ -616,6 +662,7 @@
 import WinnerCelebration, { type CelebrationVariant } from '@/components/WinnerCelebration.vue'
 import {
   addPlace,
+  approvePlace,
   castVotes,
   deleteMessage,
   getForum,
@@ -690,6 +737,9 @@ const dativaPalette = ['#214E24', '#9BDA62', '#5F5FED', '#CCC5B9', '#14080E', '#
 const palette = computed(() => (state.value?.dativaColors ? dativaPalette : defaultPalette))
 
 const places = computed(() => state.value?.places ?? [])
+// Only approved places are votable / on the wheel; suggestions wait in pending.
+const approvedPlaces = computed(() => places.value.filter((p) => p.approved))
+const pendingPlaces = computed(() => places.value.filter((p) => !p.approved))
 const voters = computed(() => state.value?.voters ?? [])
 const messages = computed(() => state.value?.messages ?? [])
 const isAdmin = computed(() => Boolean(adminToken.value))
@@ -702,7 +752,7 @@ const hasJoined = computed(
 const canVote = computed(() => hasJoined.value && state.value?.status === 'open')
 const canSpin = computed(
   () =>
-    places.value.length > 0 &&
+    approvedPlaces.value.length > 0 &&
     !spinning.value &&
     (isAdmin.value || state.value?.status === 'locked'),
 )
@@ -734,7 +784,7 @@ const countdown = computed(() => {
 })
 
 function barWidth(votes: number): string {
-  const max = Math.max(1, ...places.value.map((p) => p.votes))
+  const max = Math.max(1, ...approvedPlaces.value.map((p) => p.votes))
   return `${(votes / max) * 100}%`
 }
 
@@ -749,7 +799,7 @@ function isSelected(placeId: string): boolean {
 // votes); 'tied' = only the top-voted places at equal size. Votes are frozen
 // during a spin, so the layout the pointer lands in is stable.
 function forumWheelPool(): { name: string; weight: number }[] {
-  const ps = places.value
+  const ps = approvedPlaces.value
   if (ps.length === 0) return [{ name: 'Add places', weight: 1 }]
   const max = Math.max(...ps.map((p) => p.votes))
   if (state.value?.wheelMode === 'tied') {
@@ -973,6 +1023,11 @@ async function addPlaceFn() {
 async function removePlaceFn(placeId: string) {
   if (!adminToken.value) return
   await run(() => removePlace(forumId.value, placeId, adminToken.value!))
+}
+
+async function approvePlaceFn(placeId: string) {
+  if (!adminToken.value) return
+  await run(() => approvePlace(forumId.value, placeId, adminToken.value!))
 }
 
 async function kick(id: string) {

@@ -79,6 +79,22 @@ test('kicking a voter removes their votes', () => {
   assert.equal(after.places[0].votes, 0)
 })
 
+test('suggested places stay pending and unvotable until approved', () => {
+  const { id } = freshForum({ selectionMode: 'multi' })
+  db.addPlace(id, 'Sushi', 0) // 0 = suggestion, not auto-approved
+  const sushi = db.getForumState(id).places.find((p) => p.name === 'Sushi')
+  assert.equal(sushi.approved, false)
+
+  const voter = db.addVoter(id, 'Zoe')
+  db.setVote(id, voter.id, [sushi.id]) // ignored: pending places aren't votable
+  assert.equal(db.getForumState(id).places.find((p) => p.name === 'Sushi').votes, 0)
+
+  db.approvePlace(id, sushi.id)
+  assert.equal(db.getForumState(id).places.find((p) => p.name === 'Sushi').approved, true)
+  db.setVote(id, voter.id, [sushi.id])
+  assert.equal(db.getForumState(id).places.find((p) => p.name === 'Sushi').votes, 1)
+})
+
 test('a passed deadline flips the forum to locked on read', () => {
   const { id } = freshForum()
   db.updateForumConfig(id, { deadlineAt: Date.now() - 1 }) // already expired

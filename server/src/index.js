@@ -6,6 +6,7 @@ import {
   addVoter,
   addWheelPlayer,
   applyEloChanges,
+  approvePlace,
   createForum,
   createRoom,
   deleteResult,
@@ -394,7 +395,7 @@ function requireForumAdmin(req, res) {
  * forumWheelPool() on the client so the spin lands where the wheel shows.
  */
 function forumWheelPool(state) {
-  const places = state.places
+  const places = state.places.filter((p) => p.approved)
   if (places.length === 0) return []
   const maxVotes = Math.max(...places.map((p) => p.votes))
   if (state.wheelMode === 'tied') {
@@ -472,15 +473,25 @@ app.post('/api/forums/:id/places', (req, res) => {
   const state = loadForum(req, res)
   if (!state) return
   // Admins can always add; others only when the admin has opened up suggestions.
-  if (!isForumAdmin(req.params.id, req) && !state.allowSuggestions) {
+  const admin = isForumAdmin(req.params.id, req)
+  if (!admin && !state.allowSuggestions) {
     return res.status(403).json({ error: 'Suggestions are closed' })
   }
   const name = normalizeName(req.body?.name)
   if (!name) return res.status(400).json({ error: 'Name is required' })
   if (name.length > MAX_NAME_LEN) return res.status(400).json({ error: 'Name is too long' })
-  addPlace(req.params.id, name)
+  // Admin adds go live immediately; suggestions wait for approval.
+  addPlace(req.params.id, name, admin ? 1 : 0)
   broadcastForum(req.params.id)
   res.status(201).json(getForumState(req.params.id))
+})
+
+app.post('/api/forums/:id/places/:placeId/approve', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  if (!requireForumAdmin(req, res)) return
+  approvePlace(req.params.id, req.params.placeId)
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
 })
 
 app.delete('/api/forums/:id/places/:placeId', (req, res) => {
