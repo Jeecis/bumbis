@@ -91,7 +91,7 @@
 
         <section class="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-10">
           <!-- Left column: wheel + chat -->
-          <div class="space-y-8">
+          <div class="space-y-8 min-w-0">
             <!-- Wheel -->
             <div
               class="bg-surface-container-low rounded-[2rem] p-8 shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
@@ -192,12 +192,24 @@
                 <div
                   v-for="m in messages"
                   :key="m.id"
-                  class="bg-surface-container-high rounded-2xl px-4 py-3"
+                  class="bg-surface-container-high rounded-2xl px-4 py-3 flex items-start justify-between gap-2"
                 >
-                  <p class="text-xs font-extrabold uppercase tracking-wide text-primary">
-                    {{ m.name }}
-                  </p>
-                  <p class="text-on-surface break-words">{{ m.body }}</p>
+                  <div class="min-w-0">
+                    <p class="text-xs font-extrabold uppercase tracking-wide text-primary">
+                      {{ m.name }}
+                    </p>
+                    <p class="text-on-surface break-words [overflow-wrap:anywhere]">{{ m.body }}</p>
+                  </div>
+                  <button
+                    v-if="isAdmin"
+                    type="button"
+                    class="material-symbols-outlined text-base text-on-surface-variant hover:text-secondary transition-colors shrink-0"
+                    title="Delete message"
+                    :disabled="busy"
+                    @click="deleteChat(m.id)"
+                  >
+                    delete
+                  </button>
                 </div>
               </div>
               <form class="relative" @submit.prevent="sendChat">
@@ -224,7 +236,7 @@
           </div>
           <!-- End left column -->
 
-          <div class="space-y-8">
+          <div class="space-y-8 min-w-0">
             <!-- Identity (joining is handled by the name-gate modal) -->
             <div
               v-if="hasJoined"
@@ -605,6 +617,7 @@ import WinnerCelebration, { type CelebrationVariant } from '@/components/WinnerC
 import {
   addPlace,
   castVotes,
+  deleteMessage,
   getForum,
   joinForum,
   kickVoter,
@@ -907,6 +920,11 @@ async function sendChat() {
     await sendMessage(forumId.value, voterId.value!, body)
     chatInput.value = ''
   })
+}
+
+async function deleteChat(messageId: string) {
+  if (!adminToken.value) return
+  await run(() => deleteMessage(forumId.value, messageId, adminToken.value!))
 }
 
 async function addPlaceFn() {

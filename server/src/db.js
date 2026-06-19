@@ -664,6 +664,10 @@ const getForumMessagesStmt = db.prepare(
    ) ORDER BY created_at ASC`,
 )
 
+const deleteForumMessageStmt = db.prepare(
+  `DELETE FROM forum_messages WHERE forum_id = ? AND id = ?`,
+)
+
 export const FORUM_MESSAGE_MAX_LEN = 200
 
 export function createForum({ selectionMode = 'single', wheelMode = 'weighted' } = {}) {
@@ -829,6 +833,12 @@ export function addMessage(forumId, name, body) {
   insertForumMessageStmt.run(id, forumId, name, body.slice(0, FORUM_MESSAGE_MAX_LEN), now)
   touchForumStmt.run(now, forumId)
   return { id, name, body, created_at: now }
+}
+
+export function removeMessage(forumId, messageId) {
+  const info = deleteForumMessageStmt.run(forumId, messageId)
+  if (info.changes > 0) touchForumStmt.run(Date.now(), forumId)
+  return info.changes > 0
 }
 
 /** Delete forums untouched for longer than maxAgeMs. Returns rows removed. */

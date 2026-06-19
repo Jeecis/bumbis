@@ -141,6 +141,14 @@ export function sendMessage(id: string, voterId: string, body: string): Promise<
   })
 }
 
+export function deleteMessage(
+  id: string,
+  messageId: string,
+  adminToken: string,
+): Promise<ForumState> {
+  return request(`/forums/${id}/messages/${messageId}`, { method: 'DELETE' }, adminToken)
+}
+
 export function lockForum(id: string, adminToken: string): Promise<ForumState> {
   return request(`/forums/${id}/lock`, { method: 'POST' }, adminToken)
 }

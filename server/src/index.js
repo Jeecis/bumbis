@@ -17,6 +17,7 @@ import {
   getForumState,
   lockForum,
   pruneForums,
+  removeMessage,
   removePlace,
   removeVoter,
   setForumSpinning,
@@ -541,6 +542,14 @@ app.post('/api/forums/:id/messages', (req, res) => {
   addMessage(req.params.id, voter.name, body) // body is capped server-side
   broadcastForum(req.params.id)
   res.status(201).json(getForumState(req.params.id))
+})
+
+app.delete('/api/forums/:id/messages/:messageId', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  if (!requireForumAdmin(req, res)) return
+  removeMessage(req.params.id, req.params.messageId)
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
 })
 
 app.post('/api/forums/:id/lock', (req, res) => {
