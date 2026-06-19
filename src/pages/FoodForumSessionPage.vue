@@ -672,6 +672,8 @@ let revealTimeoutId: number | null = null
 let copyTimer: number | null = null
 let tick: number | null = null
 let bootstrapping = false
+// Newest message we've already accounted for, so we only notify on genuinely new ones.
+let lastNotifiedMessageId: string | null = null
 
 const defaultPalette = [
   '#3e65ff',
@@ -847,10 +849,39 @@ function handleSpinState(next: ForumState) {
   }
 }
 
+function ensureNotifyPermission() {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {})
+  }
+}
+
+// Pop a browser notification for messages from others that arrived while this
+// tab was in the background. The first state after a (re)load just sets the
+// baseline so we never replay the existing backlog.
+function notifyNewMessages(next: ForumState) {
+  const msgs = next.messages
+  const latestId = msgs.length ? msgs[msgs.length - 1].id : null
+  if (bootstrapping || lastNotifiedMessageId === null) {
+    lastNotifiedMessageId = latestId
+    return
+  }
+  if (latestId === lastNotifiedMessageId) return
+  const idx = msgs.findIndex((m) => m.id === lastNotifiedMessageId)
+  const fresh = idx === -1 ? msgs : msgs.slice(idx + 1)
+  lastNotifiedMessageId = latestId
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  if (!document.hidden) return // they're looking — no need to nag
+  for (const m of fresh) {
+    if (m.name === voterName.value) continue // skip our own
+    new Notification(`${m.name} · Friday Food Forum`, { body: m.body, tag: m.id })
+  }
+}
+
 function applyState(next: ForumState) {
   state.value = next
   connectionLost.value = false
   handleSpinState(next)
+  notifyNewMessages(next)
 }
 
 // --- Actions -----------------------------------------------------------------
@@ -876,6 +907,7 @@ async function join() {
     voterName.value = voter.name
     localStorage.setItem(`forumVoter:${forumId.value}`, JSON.stringify(voter))
     joinNameInput.value = ''
+    ensureNotifyPermission() // ask now, while we have the click gesture
   })
 }
 
@@ -1047,6 +1079,7 @@ watch(
 )
 onMounted(() => {
   load()
+  ensureNotifyPermission() // returning voters may already have granted it
   tick = window.setInterval(() => (now.value = Date.now()), 1000)
 })
 onBeforeUnmount(() => {
