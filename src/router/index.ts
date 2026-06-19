@@ -20,6 +20,18 @@ const routes = [
     meta: { layout: 'BlankLayout', title: 'BUMBIS | Shared Wheel' },
   },
   {
+    path: '/food-forum',
+    name: 'FoodForum',
+    component: () => import('@/pages/FoodForumPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Friday Food Forum' },
+  },
+  {
+    path: '/food-forum/:forumId',
+    name: 'FoodForumSession',
+    component: () => import('@/pages/FoodForumSessionPage.vue'),
+    meta: { layout: 'BlankLayout', title: 'BUMBIS | Friday Food Forum' },
+  },
+  {
     path: '/match/:roomId',
     name: 'Matchmaking',
     component: () => import('@/pages/MatchmakingPage.vue'),

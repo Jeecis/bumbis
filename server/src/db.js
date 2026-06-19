@@ -86,6 +86,62 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_gambles_created ON gambles(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_gambles_name ON gambles(name);
+
+  -- Friday Food Forum: shareable vote on where to eat, decided by a wheel spin.
+  CREATE TABLE IF NOT EXISTS forums (
+    id              TEXT PRIMARY KEY,
+    admin_token     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',     -- 'open' | 'locked' | 'spinning' | 'decided'
+    selection_mode  TEXT NOT NULL DEFAULT 'single',   -- 'single' | 'multi'
+    wheel_mode      TEXT NOT NULL DEFAULT 'weighted',  -- 'weighted' | 'tied'
+    deadline_at     INTEGER,                           -- ms epoch; null = no timer
+    dativa          INTEGER NOT NULL DEFAULT 0,        -- shared Dativa colour palette
+    allow_suggestions INTEGER NOT NULL DEFAULT 0,      -- non-admins may add places
+    winner_name     TEXT,
+    -- spin animation fields (mirrors the wheels table) so every client lands together
+    rotation        REAL NOT NULL DEFAULT 0,
+    winner_index    INTEGER,
+    spin_id         TEXT,
+    spin_started_at INTEGER,
+    celebration     TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS forum_places (
+    id         TEXT PRIMARY KEY,
+    forum_id   TEXT NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (forum_id, name)
+  );
+
+  CREATE TABLE IF NOT EXISTS forum_voters (
+    id         TEXT PRIMARY KEY,
+    forum_id   TEXT NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (forum_id, name)
+  );
+
+  CREATE TABLE IF NOT EXISTS forum_votes (
+    forum_id TEXT NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
+    voter_id TEXT NOT NULL REFERENCES forum_voters(id) ON DELETE CASCADE,
+    place_id TEXT NOT NULL REFERENCES forum_places(id) ON DELETE CASCADE,
+    PRIMARY KEY (voter_id, place_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS forum_messages (
+    id         TEXT PRIMARY KEY,
+    forum_id   TEXT NOT NULL REFERENCES forums(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_forum_places_forum ON forum_places(forum_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_forum_votes_place ON forum_votes(place_id);
+  CREATE INDEX IF NOT EXISTS idx_forum_messages_forum ON forum_messages(forum_id, created_at);
 `)
 
 // Migration: add the shared palette flag to wheels created before it existed.
@@ -112,6 +168,15 @@ try {
 // Backfill: seed last_played_at from updated_at so existing players are
 // immediately subject to decay rather than being exempt until their next game.
 db.exec(`UPDATE player_elo SET last_played_at = updated_at WHERE last_played_at IS NULL`)
+
+// Migration: forum options added after the table first shipped.
+for (const col of ['dativa INTEGER NOT NULL DEFAULT 0', 'allow_suggestions INTEGER NOT NULL DEFAULT 0']) {
+  try {
+    db.exec(`ALTER TABLE forums ADD COLUMN ${col}`)
+  } catch {
+    // Column already exists.
+  }
+}
 
 // URL-safe id from a restricted alphabet (no ambiguous chars like 0/O/1/l/I).
 const ID_ALPHABET = '23456789abcdefghijkmnpqrstuvwxyz'
@@ -521,6 +586,253 @@ export function setWheelPalette(wheelId, useDativa) {
 /** Delete wheels untouched for longer than maxAgeMs. Returns rows removed. */
 export function pruneWheels(maxAgeMs) {
   return pruneWheelsStmt.run(Date.now() - maxAgeMs).changes
+}
+
+// --- Friday Food Forum --------------------------------------------------------
+export const FORUM_DEFAULT_PLACES = [
+  'Food Box',
+  'Delicio',
+  'Crispy Chicken',
+  'Lido',
+  'Kebab City',
+  'Cafe 22',
+  'Pho Plus',
+]
+
+const insertForumStmt = db.prepare(
+  `INSERT INTO forums (id, admin_token, selection_mode, wheel_mode, created_at, updated_at)
+   VALUES (?, ?, ?, ?, ?, ?)`,
+)
+const getForumStmt = db.prepare(`SELECT * FROM forums WHERE id = ?`)
+const touchForumStmt = db.prepare(`UPDATE forums SET updated_at = ? WHERE id = ?`)
+const setForumStatusStmt = db.prepare(`UPDATE forums SET status = ?, updated_at = ? WHERE id = ?`)
+const setForumConfigStmt = db.prepare(
+  `UPDATE forums SET selection_mode = ?, wheel_mode = ?, deadline_at = ?, dativa = ?,
+   allow_suggestions = ?, updated_at = ? WHERE id = ?`,
+)
+// Drop all but each voter's earliest vote — used when switching multi -> single.
+const trimVotesToSingleStmt = db.prepare(
+  `DELETE FROM forum_votes WHERE forum_id = ? AND rowid NOT IN (
+     SELECT MIN(rowid) FROM forum_votes WHERE forum_id = ? GROUP BY voter_id
+   )`,
+)
+const setForumSpinningStmt = db.prepare(
+  `UPDATE forums SET status = 'spinning', rotation = ?, winner_name = ?, winner_index = ?,
+   spin_id = ?, spin_started_at = ?, celebration = ?, updated_at = ? WHERE id = ?`,
+)
+const setForumDecidedStmt = db.prepare(
+  `UPDATE forums SET status = 'decided', spin_id = NULL, spin_started_at = NULL, updated_at = ?
+   WHERE id = ?`,
+)
+const getForumPlacesStmt = db.prepare(
+  `SELECT p.id, p.name, COUNT(v.voter_id) AS votes
+   FROM forum_places p LEFT JOIN forum_votes v ON v.place_id = p.id
+   WHERE p.forum_id = ? GROUP BY p.id, p.name ORDER BY p.created_at ASC`,
+)
+const insertForumPlaceStmt = db.prepare(
+  `INSERT OR IGNORE INTO forum_places (id, forum_id, name, created_at) VALUES (?, ?, ?, ?)`,
+)
+const getForumPlaceByNameStmt = db.prepare(
+  `SELECT id, name FROM forum_places WHERE forum_id = ? AND name = ?`,
+)
+const getForumPlaceStmt = db.prepare(`SELECT id FROM forum_places WHERE forum_id = ? AND id = ?`)
+const deleteForumPlaceStmt = db.prepare(`DELETE FROM forum_places WHERE forum_id = ? AND id = ?`)
+const getForumVotersStmt = db.prepare(
+  `SELECT id, name FROM forum_voters WHERE forum_id = ? ORDER BY created_at ASC`,
+)
+const insertForumVoterStmt = db.prepare(
+  `INSERT OR IGNORE INTO forum_voters (id, forum_id, name, created_at) VALUES (?, ?, ?, ?)`,
+)
+const getForumVoterByNameStmt = db.prepare(
+  `SELECT id, name FROM forum_voters WHERE forum_id = ? AND name = ?`,
+)
+const getForumVoterStmt = db.prepare(`SELECT id FROM forum_voters WHERE forum_id = ? AND id = ?`)
+const deleteForumVoterStmt = db.prepare(`DELETE FROM forum_voters WHERE forum_id = ? AND id = ?`)
+const deleteVoterVotesStmt = db.prepare(`DELETE FROM forum_votes WHERE forum_id = ? AND voter_id = ?`)
+const insertVoteStmt = db.prepare(
+  `INSERT OR IGNORE INTO forum_votes (forum_id, voter_id, place_id) VALUES (?, ?, ?)`,
+)
+const pruneForumsStmt = db.prepare(`DELETE FROM forums WHERE updated_at < ?`)
+const insertForumMessageStmt = db.prepare(
+  `INSERT INTO forum_messages (id, forum_id, name, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+)
+// Most recent messages, oldest-first for display (the subquery grabs the newest).
+const getForumMessagesStmt = db.prepare(
+  `SELECT id, name, body, created_at FROM (
+     SELECT * FROM forum_messages WHERE forum_id = ? ORDER BY created_at DESC LIMIT 100
+   ) ORDER BY created_at ASC`,
+)
+
+export const FORUM_MESSAGE_MAX_LEN = 200
+
+export function createForum({ selectionMode = 'single', wheelMode = 'weighted' } = {}) {
+  const now = Date.now()
+  const adminToken = genId(20)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const id = genId()
+    if (getForumStmt.get(id)) continue
+    insertForumStmt.run(id, adminToken, selectionMode, wheelMode, now, now)
+    // Stagger created_at so the default places keep their listed order (ORDER BY
+    // created_at would otherwise tie and sort arbitrarily).
+    FORUM_DEFAULT_PLACES.forEach((name, i) => insertForumPlaceStmt.run(genId(10), id, name, now + i))
+    return { id, adminToken }
+  }
+  throw new Error('Could not allocate a unique forum id')
+}
+
+export function forumExists(forumId) {
+  return Boolean(getForumStmt.get(forumId))
+}
+
+/** The admin token for server-side auth only — never sent to clients. */
+export function getForumAdminToken(forumId) {
+  return getForumStmt.get(forumId)?.admin_token ?? null
+}
+
+/**
+ * Full client-facing forum state, or null if gone. Side effects on read keep the
+ * forum honest without a background job: a passed deadline flips open -> locked,
+ * and a spin whose finalize timer was lost settles to 'decided'.
+ */
+export function getForumState(forumId) {
+  const forum = getForumStmt.get(forumId)
+  if (!forum) return null
+
+  if (forum.status === 'open' && forum.deadline_at && Date.now() >= forum.deadline_at) {
+    setForumStatusStmt.run('locked', Date.now(), forumId)
+    return getForumState(forumId)
+  }
+  if (
+    forum.status === 'spinning' &&
+    forum.spin_started_at &&
+    Date.now() - forum.spin_started_at > SPIN_DURATION_MS + SPIN_GRACE_MS
+  ) {
+    finalizeForumSpin(forumId)
+    return getForumState(forumId)
+  }
+
+  return {
+    id: forum.id,
+    status: forum.status,
+    selectionMode: forum.selection_mode,
+    wheelMode: forum.wheel_mode,
+    dativaColors: Boolean(forum.dativa),
+    allowSuggestions: Boolean(forum.allow_suggestions),
+    deadlineAt: forum.deadline_at ?? null,
+    winnerName: forum.winner_name ?? null,
+    rotation: forum.rotation,
+    spin:
+      forum.status === 'spinning' && forum.spin_id
+        ? {
+            id: forum.spin_id,
+            winnerName: forum.winner_name,
+            winnerIndex: forum.winner_index,
+            startedAt: forum.spin_started_at,
+            celebration: forum.celebration,
+          }
+        : null,
+    places: getForumPlacesStmt.all(forumId),
+    voters: getForumVotersStmt.all(forumId),
+    messages: getForumMessagesStmt.all(forumId),
+  }
+}
+
+/** Idempotent join: returns the voter row (existing or freshly inserted). */
+export function addVoter(forumId, name) {
+  const now = Date.now()
+  insertForumVoterStmt.run(genId(10), forumId, name, now)
+  touchForumStmt.run(now, forumId)
+  return getForumVoterByNameStmt.get(forumId, name)
+}
+
+/** Remove a voter; their votes cascade away via the foreign key. */
+export function removeVoter(forumId, voterId) {
+  const info = deleteForumVoterStmt.run(forumId, voterId)
+  if (info.changes > 0) touchForumStmt.run(Date.now(), forumId)
+  return info.changes > 0
+}
+
+export function addPlace(forumId, name) {
+  const now = Date.now()
+  insertForumPlaceStmt.run(genId(10), forumId, name, now)
+  touchForumStmt.run(now, forumId)
+  return getForumPlaceByNameStmt.get(forumId, name)
+}
+
+export function removePlace(forumId, placeId) {
+  const info = deleteForumPlaceStmt.run(forumId, placeId)
+  if (info.changes > 0) touchForumStmt.run(Date.now(), forumId)
+  return info.changes > 0
+}
+
+/**
+ * Replace a voter's votes. Enforces single-select and that the voter and every
+ * place belong to this forum. Returns false if the voter is unknown.
+ */
+export function setVote(forumId, voterId, placeIds) {
+  if (!getForumVoterStmt.get(forumId, voterId)) return false
+  const forum = getForumStmt.get(forumId)
+  const unique = [...new Set(placeIds)]
+  if (forum.selection_mode === 'single' && unique.length > 1) {
+    throw new Error('Only one place may be selected')
+  }
+  const apply = db.transaction(() => {
+    deleteVoterVotesStmt.run(forumId, voterId)
+    for (const placeId of unique) {
+      if (getForumPlaceStmt.get(forumId, placeId)) insertVoteStmt.run(forumId, voterId, placeId)
+    }
+    touchForumStmt.run(Date.now(), forumId)
+  })
+  apply()
+  return true
+}
+
+export function updateForumConfig(forumId, { selectionMode, wheelMode, deadlineAt, dativa, allowSuggestions }) {
+  const forum = getForumStmt.get(forumId)
+  if (!forum) return
+  const nextSelection = selectionMode ?? forum.selection_mode
+  setForumConfigStmt.run(
+    nextSelection,
+    wheelMode ?? forum.wheel_mode,
+    deadlineAt === undefined ? forum.deadline_at : deadlineAt,
+    dativa === undefined ? forum.dativa : dativa ? 1 : 0,
+    allowSuggestions === undefined ? forum.allow_suggestions : allowSuggestions ? 1 : 0,
+    Date.now(),
+    forumId,
+  )
+  // Tightening multi -> single must collapse anyone's extra votes, not just block new ones.
+  if (nextSelection === 'single' && forum.selection_mode === 'multi') {
+    trimVotesToSingleStmt.run(forumId, forumId)
+  }
+}
+
+export function lockForum(forumId) {
+  setForumStatusStmt.run('locked', Date.now(), forumId)
+}
+
+export function setForumSpinning(forumId, { rotation, winnerName, winnerIndex, spinId, startedAt, celebration }) {
+  setForumSpinningStmt.run(rotation, winnerName, winnerIndex, spinId, startedAt, celebration, startedAt, forumId)
+}
+
+/** Settle a spin: keep the chosen winner and move to 'decided'. */
+export function finalizeForumSpin(forumId) {
+  const forum = getForumStmt.get(forumId)
+  if (!forum || forum.status !== 'spinning') return
+  setForumDecidedStmt.run(Date.now(), forumId)
+}
+
+/** Append a chat message (body is capped at FORUM_MESSAGE_MAX_LEN). */
+export function addMessage(forumId, name, body) {
+  const now = Date.now()
+  const id = genId(10)
+  insertForumMessageStmt.run(id, forumId, name, body.slice(0, FORUM_MESSAGE_MAX_LEN), now)
+  touchForumStmt.run(now, forumId)
+  return { id, name, body, created_at: now }
+}
+
+/** Delete forums untouched for longer than maxAgeMs. Returns rows removed. */
+export function pruneForums(maxAgeMs) {
+  return pruneForumsStmt.run(Date.now() - maxAgeMs).changes
 }
 
 export default db

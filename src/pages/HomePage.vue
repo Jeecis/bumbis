@@ -42,6 +42,12 @@
         >
           Gamble ELO
         </RouterLink>
+        <RouterLink
+          to="/food-forum"
+          class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors"
+        >
+          Friday Food Forum
+        </RouterLink>
         <button
           type="button"
           class="bg-surface-container-high px-5 py-3 rounded-full text-sm font-extrabold uppercase tracking-wide text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-60"

@@ -1,12 +1,27 @@
 import express from 'express'
 import {
+  addMessage,
+  addPlace,
   addPlayer,
+  addVoter,
   addWheelPlayer,
   applyEloChanges,
+  createForum,
   createRoom,
   deleteResult,
   createWheel,
+  finalizeForumSpin,
   finalizeWheelSpin,
+  forumExists,
+  getForumAdminToken,
+  getForumState,
+  lockForum,
+  pruneForums,
+  removePlace,
+  removeVoter,
+  setForumSpinning,
+  setVote,
+  updateForumConfig,
   getAllResults,
   getLeaderboard,
   getPlayerRatingsMap,
@@ -86,6 +101,19 @@ function broadcastWheel(wheelId) {
   const streams = wheelSubscribers.get(wheelId)
   if (!streams || streams.size === 0) return
   const state = getWheelState(wheelId)
+  const payload = `data: ${JSON.stringify(state)}\n\n`
+  for (const res of streams) res.write(payload)
+}
+
+// forumId -> Set of open response streams (Friday Food Forum live voting).
+const forumSubscribers = new Map()
+// forumId -> finalize timeout for a running spin.
+const forumSpinTimers = new Map()
+
+function broadcastForum(forumId) {
+  const streams = forumSubscribers.get(forumId)
+  if (!streams || streams.size === 0) return
+  const state = getForumState(forumId)
   const payload = `data: ${JSON.stringify(state)}\n\n`
   for (const res of streams) res.write(payload)
 }
@@ -334,6 +362,240 @@ app.post('/api/wheels/:id/spin', (req, res) => {
   res.json(getWheelState(id))
 })
 
+// --- Friday Food Forum --------------------------------------------------------
+// The forum creator gets an admin token (returned once, kept in their browser).
+// Admin-only actions require it; voting is open to anyone with the link.
+function isForumAdmin(forumId, req) {
+  const token = req.get('x-admin-token') || req.body?.adminToken
+  return Boolean(token) && token === getForumAdminToken(forumId)
+}
+
+function loadForum(req, res) {
+  if (!forumExists(req.params.id)) {
+    res.status(404).json({ error: 'Forum not found' })
+    return null
+  }
+  return getForumState(req.params.id)
+}
+
+function requireForumAdmin(req, res) {
+  if (!isForumAdmin(req.params.id, req)) {
+    res.status(403).json({ error: 'Admin token required' })
+    return false
+  }
+  return true
+}
+
+/**
+ * The places that go on the wheel, with a weight each. 'weighted' gives every
+ * place with votes a slice proportional to its votes (an even split before any
+ * votes); 'tied' keeps only the top-voted places at equal odds. Mirrors
+ * forumWheelPool() on the client so the spin lands where the wheel shows.
+ */
+function forumWheelPool(state) {
+  const places = state.places
+  if (places.length === 0) return []
+  const maxVotes = Math.max(...places.map((p) => p.votes))
+  if (state.wheelMode === 'tied') {
+    return places.filter((p) => p.votes === maxVotes).map((p) => ({ name: p.name, weight: 1 }))
+  }
+  const hasVotes = maxVotes > 0
+  return places
+    .filter((p) => (hasVotes ? p.votes > 0 : true))
+    .map((p) => ({ name: p.name, weight: hasVotes ? p.votes : 1 }))
+}
+
+app.post('/api/forums', (req, res) => {
+  const selectionMode = req.body?.selectionMode === 'multi' ? 'multi' : 'single'
+  const wheelMode = req.body?.wheelMode === 'tied' ? 'tied' : 'weighted'
+  const { id, adminToken } = createForum({ selectionMode, wheelMode })
+  res.status(201).json({ id, adminToken })
+})
+
+app.get('/api/forums/:id', (req, res) => {
+  const state = loadForum(req, res)
+  if (state) res.json(state)
+})
+
+app.get('/api/forums/:id/events', (req, res) => {
+  const { id } = req.params
+  if (!forumExists(id)) return res.status(404).end()
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  })
+  res.write('retry: 3000\n\n')
+  res.write(`data: ${JSON.stringify(getForumState(id))}\n\n`)
+
+  let streams = forumSubscribers.get(id)
+  if (!streams) {
+    streams = new Set()
+    forumSubscribers.set(id, streams)
+  }
+  streams.add(res)
+
+  const ping = setInterval(() => res.write(': ping\n\n'), 25000)
+
+  req.on('close', () => {
+    clearInterval(ping)
+    streams.delete(res)
+    if (streams.size === 0) forumSubscribers.delete(id)
+  })
+})
+
+app.post('/api/forums/:id/voters', (req, res) => {
+  const state = loadForum(req, res)
+  if (!state) return
+  const name = normalizeName(req.body?.name)
+  if (!name) return res.status(400).json({ error: 'Name is required' })
+  if (name.length > MAX_NAME_LEN) return res.status(400).json({ error: 'Name is too long' })
+  if (!state.voters.some((v) => v.name === name) && state.voters.length >= MAX_PLAYERS) {
+    return res.status(409).json({ error: 'Forum is full' })
+  }
+  const voter = addVoter(req.params.id, name)
+  broadcastForum(req.params.id)
+  res.status(201).json({ voter, forum: getForumState(req.params.id) })
+})
+
+// Self-leave or admin kick (removed user can rejoin with the link).
+app.delete('/api/forums/:id/voters/:voterId', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  removeVoter(req.params.id, req.params.voterId)
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
+})
+
+app.post('/api/forums/:id/places', (req, res) => {
+  const state = loadForum(req, res)
+  if (!state) return
+  // Admins can always add; others only when the admin has opened up suggestions.
+  if (!isForumAdmin(req.params.id, req) && !state.allowSuggestions) {
+    return res.status(403).json({ error: 'Suggestions are closed' })
+  }
+  const name = normalizeName(req.body?.name)
+  if (!name) return res.status(400).json({ error: 'Name is required' })
+  if (name.length > MAX_NAME_LEN) return res.status(400).json({ error: 'Name is too long' })
+  addPlace(req.params.id, name)
+  broadcastForum(req.params.id)
+  res.status(201).json(getForumState(req.params.id))
+})
+
+app.delete('/api/forums/:id/places/:placeId', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  if (!requireForumAdmin(req, res)) return
+  removePlace(req.params.id, req.params.placeId)
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
+})
+
+app.put('/api/forums/:id/votes', (req, res) => {
+  const state = loadForum(req, res)
+  if (!state) return
+  if (state.status !== 'open') return res.status(409).json({ error: 'Voting is closed' })
+  const { voterId } = req.body || {}
+  const placeIds = Array.isArray(req.body?.placeIds) ? req.body.placeIds : []
+  try {
+    if (!setVote(req.params.id, voterId, placeIds)) {
+      return res.status(404).json({ error: 'Join the forum before voting' })
+    }
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
+})
+
+app.patch('/api/forums/:id/config', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  if (!requireForumAdmin(req, res)) return
+  const body = req.body || {}
+  const selectionMode = body.selectionMode === 'multi' || body.selectionMode === 'single' ? body.selectionMode : undefined
+  const wheelMode = body.wheelMode === 'weighted' || body.wheelMode === 'tied' ? body.wheelMode : undefined
+  const dativa = typeof body.dativaColors === 'boolean' ? body.dativaColors : undefined
+  const allowSuggestions = typeof body.allowSuggestions === 'boolean' ? body.allowSuggestions : undefined
+  // deadlineMinutes: positive number sets a timer from now; 0/null clears it.
+  let deadlineAt
+  if ('deadlineMinutes' in body) {
+    const mins = Number(body.deadlineMinutes)
+    deadlineAt = Number.isFinite(mins) && mins > 0 ? Date.now() + mins * 60 * 1000 : null
+  }
+  updateForumConfig(req.params.id, { selectionMode, wheelMode, deadlineAt, dativa, allowSuggestions })
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
+})
+
+app.post('/api/forums/:id/messages', (req, res) => {
+  const state = loadForum(req, res)
+  if (!state) return
+  // Only joined voters can chat (they entered a name to get in).
+  const voter = state.voters.find((v) => v.id === req.body?.voterId)
+  if (!voter) return res.status(403).json({ error: 'Join the forum before chatting' })
+  const body = normalizeName(req.body?.body)
+  if (!body) return res.status(400).json({ error: 'Message is empty' })
+  addMessage(req.params.id, voter.name, body) // body is capped server-side
+  broadcastForum(req.params.id)
+  res.status(201).json(getForumState(req.params.id))
+})
+
+app.post('/api/forums/:id/lock', (req, res) => {
+  if (!forumExists(req.params.id)) return res.status(404).json({ error: 'Forum not found' })
+  if (!requireForumAdmin(req, res)) return
+  lockForum(req.params.id)
+  broadcastForum(req.params.id)
+  res.json(getForumState(req.params.id))
+})
+
+// Spin the tie-breaker. The admin can spin any time; once the timer locks the
+// forum, anyone can. The wheel slices are proportional to the live vote weights,
+// computed identically here and on the client (votes are frozen during a spin,
+// so both agree on the layout the pointer lands in — see forumWheelPool in
+// src/pages/FoodForumSessionPage.vue).
+app.post('/api/forums/:id/spin', (req, res) => {
+  const state = loadForum(req, res)
+  if (!state) return
+  if (!isForumAdmin(req.params.id, req) && state.status !== 'locked') {
+    return res.status(403).json({ error: 'Wait for the timer, or ask the admin to spin' })
+  }
+  if (state.status === 'spinning') return res.status(409).json({ error: 'Already spinning' })
+  const pool = forumWheelPool(state)
+  if (pool.length < 1) return res.status(400).json({ error: 'Add at least one place first' })
+
+  const total = pool.reduce((sum, seg) => sum + seg.weight, 0)
+  let roll = Math.random() * total
+  let winnerIndex = pool.findIndex((seg) => (roll -= seg.weight) < 0)
+  if (winnerIndex < 0) winnerIndex = pool.length - 1
+  const winnerName = pool[winnerIndex].name
+
+  // Land the chosen slice's centre under the pointer (90°, 3 o'clock). Slice
+  // angles are proportional to weight, accumulated from 0°.
+  let before = 0
+  for (let i = 0; i < winnerIndex; i++) before += pool[i].weight
+  const centerAngle = ((before + pool[winnerIndex].weight / 2) / total) * 360
+  const pointerAngle = 90
+  const targetWithinTurn = (((pointerAngle - centerAngle - state.rotation) % 360) + 360) % 360
+  const rotation = state.rotation + 360 * 6 + targetWithinTurn
+  const startedAt = Date.now()
+  const spinId = `${req.params.id}-${startedAt}`
+  const celebration = CELEBRATION_VARIANTS[Math.floor(Math.random() * CELEBRATION_VARIANTS.length)]
+
+  setForumSpinning(req.params.id, { rotation, winnerName, winnerIndex, spinId, startedAt, celebration })
+  broadcastForum(req.params.id)
+
+  const existing = forumSpinTimers.get(req.params.id)
+  if (existing) clearTimeout(existing)
+  const timer = setTimeout(() => {
+    forumSpinTimers.delete(req.params.id)
+    finalizeForumSpin(req.params.id)
+    broadcastForum(req.params.id)
+  }, SPIN_DURATION_MS + SPIN_GRACE_MS)
+  timer.unref?.()
+  forumSpinTimers.set(req.params.id, timer)
+
+  res.json(getForumState(req.params.id))
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 // --- Game Results -------------------------------------------------------------
@@ -503,6 +765,8 @@ setInterval(() => {
   if (removed > 0) console.log(`Pruned ${removed} stale room(s)`)
   const removedWheels = pruneWheels(ROOM_TTL_MS)
   if (removedWheels > 0) console.log(`Pruned ${removedWheels} stale wheel(s)`)
+  const removedForums = pruneForums(ROOM_TTL_MS)
+  if (removedForums > 0) console.log(`Pruned ${removedForums} stale forum(s)`)
 }, 60 * 60 * 1000).unref()
 
 function recalculateElo() {

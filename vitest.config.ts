@@ -7,7 +7,8 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'jsdom',
-      exclude: [...configDefaults.exclude, 'e2e/*'],
+      // server/ has its own Node test runner (node --test); keep it out of the jsdom suite.
+      exclude: [...configDefaults.exclude, 'e2e/*', 'server/**'],
       root: fileURLToPath(new URL('./', import.meta.url)),
     },
   }),
